@@ -8,6 +8,8 @@ import base64
 import os
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
+from dotenv import load_dotenv
+import google.generativeai as genai
 
 st.set_page_config(page_title="아보미 Abomi - 미국주식 & 금융 데이터", layout="wide", page_icon="🌱")
 
@@ -478,7 +480,8 @@ with st.sidebar:
             "📊 실시간 주가",
             "💼 내 보유 주식",
             "💱 국제 환율",
-            "🗺️ 등락률 트리맵"
+            "🗺️ 등락률 트리맵",
+            "💬 AI 금융 챗봇"
         ],
         index=0
     )
@@ -1023,3 +1026,74 @@ elif selected_page == "🗺️ 등락률 트리맵":
             height=700 
         )
         st.plotly_chart(fig_tree_full, use_container_width=True)
+
+# =========================================================
+# 📄 PAGE 5: 💬 AI 금융 챗봇 (AI Financial Chatbot)
+# =========================================================
+elif selected_page == "💬 AI 금융 챗봇":
+    st.subheader("💬 아보미 AI 금융 챗봇")
+    st.caption("Gemini 1.5 Flash 기반의 AI 애널리스트와 미국 주식, 재무 지표, 투자 전략에 대해 실시간으로 대화해 보세요.")
+
+    import google.generativeai as genai
+    from dotenv import load_dotenv
+
+    load_dotenv()
+    api_key = os.getenv("GEMINI_API_KEY") or os.getenv("gemini_api_key")
+
+    if not api_key or api_key == "여기에_내API_키_입력":
+        st.warning("⚠️ `.env` 파일에 올바른 `GEMINI_API_KEY`를 설정해 주시면 AI 챗봇을 바로 이용하실 수 있습니다.")
+
+    # 대화 기록 초기화
+    if "chat_messages" not in st.session_state:
+        st.session_state["chat_messages"] = [
+            {"role": "assistant", "content": "안녕하세요! 아보미 AI 금융 애널리스트입니다. 궁금하신 주식 종목, 재무 지표, 시장 동향에 대해 편하게 질문해 주세요! 🚀"}
+        ]
+
+    # 기존 대화 기록 화면 출력
+    for msg in st.session_state["chat_messages"]:
+        with st.chat_message(msg["role"]):
+            st.write(msg["content"])
+
+    # 사용자 입력 처리
+    if user_input := st.chat_input("예: NVDA와 AMD 중 어떤 종목의 실적이 좋아? 또는 PER이 뭐야?"):
+        # 사용자 메시지 저장 및 출력
+        st.session_state["chat_messages"].append({"role": "user", "content": user_input})
+        with st.chat_message("user"):
+            st.write(user_input)
+
+        if api_key and api_key != "여기에_내API_키_입력":
+            with st.chat_message("assistant"):
+                with st.spinner("AI 애널리스트가 질문을 분석하여 답변 중입니다..."):
+                    try:
+                        genai.configure(api_key=api_key)
+                        # 3.6-flash 모델 적용 (최신 모델 호환)
+                        model_name = "gemini-3.6-flash"
+                        try:
+                            model = genai.GenerativeModel(
+                                model_name,
+                                system_instruction="너는 미국 주식 및 금융 데이터 전문 AI 애널리스트 '아보미 AI'야. 친절하고 명확하게 한국어로 전문적인 주식 정보와 재무 해석을 제공해 줘."
+                            )
+                        except Exception:
+                            model = genai.GenerativeModel(
+                                "gemini-1.5-flash",
+                                system_instruction="너는 미국 주식 및 금융 데이터 전문 AI 애널리스트 '아보미 AI'야. 친절하고 명확하게 한국어로 전문적인 주식 정보와 재무 해석을 제공해 줘."
+                            )
+
+                        # 대화 히스토리 전달
+                        history = []
+                        for m in st.session_state["chat_messages"][:-1]:
+                            history.append({
+                                "role": "user" if m["role"] == "user" else "model",
+                                "parts": [m["content"]]
+                            })
+
+                        chat = model.start_chat(history=history)
+                        response = chat.send_message(user_input)
+                        ai_reply = response.text
+
+                        st.write(ai_reply)
+                        st.session_state["chat_messages"].append({"role": "assistant", "content": ai_reply})
+                    except Exception as e:
+                        err_msg = f"❌ AI 답변 생성 중 오류가 발생했습니다: {e}"
+                        st.error(err_msg)
+                        st.session_state["chat_messages"].append({"role": "assistant", "content": err_msg})

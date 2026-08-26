@@ -1,0 +1,1 @@
+response = ai_model("지금 코드를 설명해")
