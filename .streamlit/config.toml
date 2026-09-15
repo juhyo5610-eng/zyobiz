@@ -1,0 +1,17 @@
+[server]
+enableStaticServing = true
+
+[[theme.fontFaces]]
+family = "Noto Sans KR"
+url = "app/static/fonts/NotoSansKR-Variable.woff2"
+weight = 400
+style = "normal"
+
+[[theme.fontFaces]]
+family = "Noto Sans KR"
+url = "app/static/fonts/NotoSansKR-Variable.woff2"
+weight = 700
+style = "normal"
+
+[theme]
+font = "Noto Sans KR"

@@ -1,0 +1,99 @@
+================================================================
+  아보미(Abomi) 앱 - 한글 폰트 깨짐 해결 작업 인수인계서
+  작업일: 2026-09-06 ~ 2026-09-08
+================================================================
+
+## 1. 문제 현상
+- streamlit run zyoapp.py 로 앱 실행 시
+- 크롬 개인계정 1 → 한글 정상
+- 크롬 개인계정 2 → 한글 깨짐 (글자가 이상하게 보임)
+- 시크릿 모드 → 한글 정상
+
+## 2. 원인 분석 과정
+1차: 확장 프로그램이 Google Fonts CDN 차단 의심 → 시크릿에서 정상이니 맞음
+2차: 확장 프로그램 전부 끄고, 폰트 설정/언어 설정 비교 → 동일
+3차: 캐시 삭제, 강제 새로고침 → 안됨
+4차: Selenium으로 자동 진단 → base64 폰트 로드 자체는 정상
+최종: 크롬 프로필 내부 데이터 손상 → chrome://settings/reset 으로 해결
+
+## 3. 코드에 적용한 변경 사항 (배포 시 유지 필요)
+
+### 3-1. 새로 생성된 파일들
+
+  C:\zyobiz\
+  ├── .streamlit\
+  │   └── config.toml          ← Streamlit 정적 파일 서빙 + 폰트 설정
+  ├── static\
+  │   └── fonts\
+  │       ├── NotoSansKR-Regular.woff2   (533KB)
+  │       ├── NotoSansKR-Bold.woff2      (550KB)
+  │       └── NotoSansKR-Variable.woff2  (1070KB, 백업용)
+  └── zyoapp.py                 ← 수정됨
+
+### 3-2. zyoapp.py 주요 변경 내용
+
+  (A) Google Fonts CDN 외부 링크 제거
+      - 삭제: <link href="https://fonts.googleapis.com/css2?family=Nanum+Gothic...">
+      - 이유: 광고차단기/방화벽이 차단하면 폰트 로드 실패
+
+  (B) Base64 웹폰트 로더 추가 (Line 25~33 부근)
+      - @st.cache_data 로 woff2 파일을 base64로 읽어 CSS에 직접 내장
+      - font_regular_b64, font_bold_b64 변수
+
+  (C) @font-face를 base64 data URI 방식으로 변경
+      - Streamlit의 MIME 타입 버그(application/octet-stream) 우회
+      - url('data:font/woff2;base64,...') 로 브라우저에 직접 내장
+
+  (D) font-family 스택 전면 교체 (CSS 9곳 + Plotly 4곳)
+      - 변경 전: 'Malgun Gothic', 'Nanum Gothic', sans-serif
+      - 변경 후: 'Noto Sans KR', -apple-system, BlinkMacSystemFont,
+                 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif
+
+  (E) 글자 테스트 페이지에 JavaScript 자동 브라우저 진단 추가
+
+### 3-3. config.toml 내용
+
+  [server]
+  enableStaticServing = true
+
+  [[theme.fontFaces]]
+  family = "Noto Sans KR"
+  url = "app/static/fonts/NotoSansKR-Variable.woff2"
+  weight = 400
+
+  [[theme.fontFaces]]
+  family = "Noto Sans KR"
+  url = "app/static/fonts/NotoSansKR-Variable.woff2"
+  weight = 700
+
+  [theme]
+  font = "Noto Sans KR"
+
+## 4. 핵심 기술 발견
+
+  (1) Streamlit static 서빙 MIME 버그
+      - .woff2를 application/octet-stream으로 서빙 + nosniff
+      - Chrome이 폰트 로드 거부 → base64 CSS 내장으로 우회
+
+  (2) Noto Sans KR 선택 이유
+      - Google+Adobe 제작, OFL 상업무료 라이선스
+      - 한글 11,172자 전체, 9개 웨이트(100~900)
+
+## 5. 배포 시 주의사항
+
+  - static/fonts/ woff2 파일들 반드시 함께 배포
+  - .streamlit/config.toml 함께 배포
+  - Streamlit Cloud에서는 MIME 버그가 해결될 수 있으므로
+    base64 → URL 방식 전환 테스트 권장
+
+## 6. 현재 프로젝트 구조
+
+  C:\zyobiz\
+  ├── .streamlit\config.toml
+  ├── static\fonts\NotoSansKR-*.woff2 (3개)
+  ├── .env, .gitignore
+  ├── abomi_logo.jpg
+  ├── zyoapp.py  ← 메인 앱
+  └── (기타 py 파일들)
+
+================================================================

@@ -11,7 +11,11 @@ from concurrent.futures import ThreadPoolExecutor
 from dotenv import load_dotenv
 import google.generativeai as genai
 
-st.set_page_config(page_title="아보미 Abomi - 미국주식 & 금융 데이터", layout="wide", page_icon="🌱")
+st.set_page_config(page_title="Abomi — 미국주식 & 금융", layout="wide", page_icon="🌱")
+
+# === 환경 변수 ===
+load_dotenv()
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("gemini_api_key")
 
 # === Base64 로고 로더 ===
 def get_base64_image(image_path):
@@ -22,9 +26,21 @@ def get_base64_image(image_path):
 
 logo_b64 = get_base64_image("abomi_logo.jpg")
 
+# === Base64 웹폰트 로더 (Streamlit 정적 서빙 MIME 타입 문제 우회) ===
+@st.cache_data
+def get_base64_font(font_path):
+    """폰트 파일을 base64로 인코딩하여 CSS data: URL에 직접 내장"""
+    if os.path.exists(font_path):
+        with open(font_path, "rb") as f:
+            return base64.b64encode(f.read()).decode('utf-8')
+    return ""
+
+font_regular_b64 = get_base64_font("static/fonts/NotoSansKR-Regular.woff2")
+font_bold_b64 = get_base64_font("static/fonts/NotoSansKR-Bold.woff2")
+
 # === 테마 및 세션 상태 초기화 ===
 if "theme_mode" not in st.session_state:
-    st.session_state["theme_mode"] = "System"
+    st.session_state["theme_mode"] = "Light"
 
 if "my_portfolio" not in st.session_state:
     st.session_state["my_portfolio"] = [
@@ -34,312 +50,175 @@ if "my_portfolio" not in st.session_state:
         {"Ticker": "SCHD", "종목명": "Schwab US Dividend Equity", "매수가($)": 26.50, "보유주수": 50},
     ]
 
-# === 🎨 커스텀 CSS (나눔고딕 폰트, 테마 모드, #79E963 포인트 컬러, Deploy버튼 제거, 아이콘 폰트 픽스) ===
+if "chat_messages" not in st.session_state:
+    st.session_state["chat_messages"] = [
+        {"role": "assistant", "content": "궁금한 종목이나 투자 전략을 물어보세요 🚀"}
+    ]
+
+# === 커스텀 CSS ===
 theme_mode = st.session_state["theme_mode"]
 
 if theme_mode == "Light":
     theme_vars = """
     :root {
-        --bg-main: #f7F7F7;
-        --bg-card: #FFFFFF;
-        --bg-metric: #F8FAFC;
-        --text-main: #1F2937;
-        --text-sub: #6B7280;
-        --border-color: #EBEBEB;
-        --shadow-color: rgba(0, 0, 0, 0.03);
+        --bg-main: #FAFAFA; --bg-card: #FFFFFF; --bg-metric: #F9FAFB;
+        --text-main: #111827; --text-sub: #6B7280;
+        --border-color: #E5E7EB; --shadow-color: rgba(0, 0, 0, 0.04);
     }
     """
 elif theme_mode == "Dark":
     theme_vars = """
     :root {
-        --bg-main: #1E2022;
-        --bg-card: #282A2D;
-        --bg-metric: #33373B;
-        --text-main: #F3F4F6;
-        --text-sub: #9CA3AF;
-        --border-color: #383C42;
-        --shadow-color: rgba(0, 0, 0, 0.3);
+        --bg-main: #111827; --bg-card: #1F2937; --bg-metric: #1F2937;
+        --text-main: #F9FAFB; --text-sub: #9CA3AF;
+        --border-color: #374151; --shadow-color: rgba(0, 0, 0, 0.3);
     }
     """
-else: # System
+else:
     theme_vars = """
     :root {
-        --bg-main: #f7F7F7;
-        --bg-card: #FFFFFF;
-        --bg-metric: #F8FAFC;
-        --text-main: #1F2937;
-        --text-sub: #6B7280;
-        --border-color: #EBEBEB;
-        --shadow-color: rgba(0, 0, 0, 0.03);
+        --bg-main: #FAFAFA; --bg-card: #FFFFFF; --bg-metric: #F9FAFB;
+        --text-main: #111827; --text-sub: #6B7280;
+        --border-color: #E5E7EB; --shadow-color: rgba(0, 0, 0, 0.04);
     }
     @media (prefers-color-scheme: dark) {
         :root {
-            --bg-main: #1E2022;
-            --bg-card: #282A2D;
-            --bg-metric: #33373B;
-            --text-main: #F3F4F6;
-            --text-sub: #9CA3AF;
-            --border-color: #383C42;
-            --shadow-color: rgba(0, 0, 0, 0.3);
+            --bg-main: #111827; --bg-card: #1F2937; --bg-metric: #1F2937;
+            --text-main: #F9FAFB; --text-sub: #9CA3AF;
+            --border-color: #374151; --shadow-color: rgba(0, 0, 0, 0.3);
         }
     }
     """
 
 st.markdown(f"""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Nanum+Gothic:wght@400;700;800;900&display=swap');
+/* === Base64 내장 웹폰트 (MIME 타입·광고차단기·방화벽 무관, 100% 로딩 보장) === */
+@font-face {{
+    font-family: 'Noto Sans KR';
+    src: url('data:font/woff2;base64,{font_regular_b64}') format('woff2');
+    font-weight: 400; font-style: normal; font-display: swap;
+}}
+@font-face {{
+    font-family: 'Noto Sans KR';
+    src: url('data:font/woff2;base64,{font_bold_b64}') format('woff2');
+    font-weight: 700; font-style: normal; font-display: swap;
+}}
 
 {theme_vars}
 
-/* 1. Deploy 버튼 숨기기 & 3줄 사이드바 열기/닫기 가로 메뉴 버튼 활성화 및 스타일링 */
-.stAppDeployButton,
-[data-testid="stAppDeployButton"] {{
-    display: none !important;
-}}
+.stAppDeployButton, [data-testid="stAppDeployButton"] {{ display: none !important; }}
+header[data-testid="stHeader"] {{ background: transparent !important; z-index: 99999 !important; }}
 
-header[data-testid="stHeader"] {{
-    background: transparent !important;
-    z-index: 99999 !important;
-}}
-
-/* 3줄 가로 메뉴 아이콘 버튼 (사이드바 열기 / 닫기 컨트롤) */
-[data-testid="collapsedControl"],
-[data-testid="stSidebarCollapseButton"],
-[data-testid="stSidebarHeader"] button,
-button[data-testid="stBaseButton-header"] {{
-    display: flex !important;
-    visibility: visible !important;
-    opacity: 1 !important;
-}}
-
-/* 기존 모든 화살표 (>>, <<, <, >) SVG 및 내부 하위 요소 완전 제거 */
+/* 사이드바 토글 */
 [data-testid="collapsedControl"] button *,
 [data-testid="stSidebarCollapseButton"] button *,
 [data-testid="stSidebarHeader"] button *,
 button[data-testid="stBaseButton-header"] * {{
-    display: none !important;
-    visibility: hidden !important;
-    width: 0 !important;
-    height: 0 !important;
-    opacity: 0 !important;
+    display: none !important; visibility: hidden !important;
+    width: 0 !important; height: 0 !important; opacity: 0 !important;
 }}
-
 [data-testid="collapsedControl"] button,
 [data-testid="stSidebarCollapseButton"] button,
 [data-testid="stSidebarHeader"] button,
 button[data-testid="stBaseButton-header"] {{
-    border-radius: 8px !important;
-    border: 1px solid var(--border-color) !important;
+    border-radius: 8px !important; border: 1px solid var(--border-color) !important;
     background-color: var(--bg-card) !important;
-    color: var(--text-main) !important;
-    width: 38px !important;
-    height: 38px !important;
-    padding: 0 !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    box-shadow: 0 2px 8px var(--shadow-color) !important;
-    transition: all 0.2s ease !important;
+    width: 36px !important; height: 36px !important; padding: 0 !important;
+    display: flex !important; align-items: center !important; justify-content: center !important;
+    box-shadow: 0 1px 2px var(--shadow-color) !important;
 }}
-
-/* 열림/닫힘 상관없이 오직 3줄 직선 (한자 셋 삼 三 형태) ☰ 아이콘 단 하나만 렌더링 */
 [data-testid="collapsedControl"] button::before,
 [data-testid="stSidebarCollapseButton"] button::before,
 [data-testid="stSidebarHeader"] button::before,
 button[data-testid="stBaseButton-header"]::before {{
-    content: "☰" !important;
-    font-size: 22px !important;
-    font-weight: 900 !important;
-    color: var(--text-main) !important;
-    display: block !important;
-    visibility: visible !important;
+    content: "☰" !important; font-size: 20px !important; font-weight: 900 !important;
+    color: var(--text-main) !important; display: block !important; visibility: visible !important;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
-    line-height: 1 !important;
-    text-align: center !important;
 }}
-
-[data-testid="collapsedControl"] button:hover::before,
-[data-testid="stSidebarCollapseButton"] button:hover::before,
-[data-testid="stSidebarHeader"] button:hover::before,
-button[data-testid="stBaseButton-header"]:hover::before {{
-    color: #79E963 !important;
-}}
-
 [data-testid="collapsedControl"] button:hover,
 [data-testid="stSidebarCollapseButton"] button:hover,
 [data-testid="stSidebarHeader"] button:hover,
-button[data-testid="stBaseButton-header"]:hover {{
-    border-color: #79E963 !important;
-}}
+button[data-testid="stBaseButton-header"]:hover {{ border-color: #10B981 !important; }}
+[data-testid="collapsedControl"] button:hover::before,
+[data-testid="stSidebarCollapseButton"] button:hover::before,
+[data-testid="stSidebarHeader"] button:hover::before,
+button[data-testid="stBaseButton-header"]:hover::before {{ color: #10B981 !important; }}
 
-/* 2. 상단 패딩 여유 공간 확보 */
 .block-container {{
-    padding-top: 3.2rem !important;
-    padding-bottom: 3rem !important;
+    padding-top: 2.5rem !important; padding-bottom: 2rem !important;
     max-width: 95% !important;
 }}
 
-/* 3. 기본 글꼴 설정 (icon / symbol 요소는 제외하여 text 겹침 버그 차단) */
 body, .stApp, h1, h2, h3, h4, h5, h6, p, label, input, button {{
-    font-family: 'Nanum Gothic', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-family: 'Noto Sans KR', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
 }}
-
-/* Streamlit 내장 머티리얼 아이콘 폰트 보존 */
-[data-testid="stIcon"],
-[data-testid="stIcon"] *,
-span[data-testid="stIcon"],
-i, 
-svg,
-summary [data-testid="stIcon"],
-.material-symbols-outlined,
-.material-symbols-rounded,
-.material-icons {{
+[data-testid="stIcon"], [data-testid="stIcon"] *, span[data-testid="stIcon"], i, svg,
+summary [data-testid="stIcon"], .material-symbols-outlined, .material-symbols-rounded, .material-icons {{
     font-family: 'Material Symbols Rounded', 'Material Symbols Outlined', 'Material Icons', sans-serif !important;
 }}
+.stApp {{ background-color: var(--bg-main) !important; color: var(--text-main) !important; }}
 
-/* 전체 배경 및 기본 글자색 */
-.stApp {{
-    background-color: var(--bg-main) !important;
-    color: var(--text-main) !important;
-}}
-
-/* 사이드바 스타일링 */
 section[data-testid="stSidebar"] {{
-    background-color: var(--bg-card) !important;
-    border-right: 1px solid var(--border-color) !important;
+    background-color: var(--bg-card) !important; border-right: 1px solid var(--border-color) !important;
 }}
-
 section[data-testid="stSidebar"] .stRadio label span {{
-    font-family: 'Nanum Gothic', sans-serif !important;
-    font-size: 15px !important;
-    font-weight: 700 !important;
-    color: var(--text-main) !important;
+    font-family: 'Noto Sans KR', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif !important;
+    font-size: 14px !important; font-weight: 600 !important; color: var(--text-main) !important;
 }}
 
-/* 상단 브랜딩 헤더 영역 */
-.abomi-brand {{
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 2px 0;
-}}
-
+.abomi-brand {{ display: flex; align-items: center; gap: 10px; }}
 .abomi-logo {{
-    height: 44px;
-    width: auto;
-    border: none !important;
-    outline: none !important;
-    box-shadow: none !important;
-    border-radius: 0 !important;
-    background: transparent !important;
-    object-fit: contain;
+    height: 36px; width: auto; border: none !important; outline: none !important;
+    box-shadow: none !important; border-radius: 0 !important; background: transparent !important;
 }}
-
-.abomi-title-group {{
-    display: flex;
-    flex-direction: column;
-}}
-
 .abomi-title {{
-    font-size: 26px;
-    font-weight: 900;
-    color: var(--text-main) !important;
-    margin: 0;
-    line-height: 1.1;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    font-family: 'Nanum Gothic', sans-serif !important;
-    letter-spacing: -0.5px;
+    font-size: 22px; font-weight: 800; color: var(--text-main) !important; margin: 0; line-height: 1.2;
+    font-family: 'Noto Sans KR', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif !important;
 }}
-
-.abomi-sub-tag {{
-    font-size: 15px;
-    font-weight: 600;
-    color: var(--text-sub) !important;
-    margin-left: 6px;
-    font-family: 'Nanum Gothic', sans-serif !important;
-}}
-
-.abomi-tag {{
-    background-color: #79E963;
-    color: #0F3805 !important;
-    font-size: 13px;
-    font-weight: 800;
-    padding: 3px 12px;
-    border-radius: 20px;
-    font-family: 'Nanum Gothic', sans-serif !important;
-}}
-
 .abomi-subtitle {{
-    font-size: 14px;
-    color: var(--text-sub) !important;
-    margin: 4px 0 0 0;
-    font-family: 'Nanum Gothic', sans-serif !important;
+    font-size: 13px; color: var(--text-sub) !important; margin: 2px 0 0 0;
+    font-family: 'Noto Sans KR', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif !important;
 }}
 
-/* 버튼 스타일링 (#79E963 강조) */
 .stButton>button {{
-    background-color: #79E963 !important;
-    color: #0F3805 !important;
-    font-family: 'Nanum Gothic', sans-serif !important;
-    font-weight: 700 !important;
-    border: 1px solid #62d64c !important;
-    border-radius: 10px !important;
-    padding: 10px 16px !important;
-    transition: all 0.2s ease-in-out !important;
-    box-shadow: 0 2px 8px rgba(121, 233, 99, 0.3) !important;
+    background-color: #10B981 !important; color: #FFFFFF !important;
+    font-family: 'Noto Sans KR', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif !important;
+    font-weight: 600 !important; border: none !important; border-radius: 8px !important;
+    padding: 8px 16px !important; box-shadow: none !important;
 }}
+.stButton>button:hover {{ background-color: #059669 !important; }}
 
-.stButton>button:hover {{
-    background-color: #66d650 !important;
-    box-shadow: 0 4px 14px rgba(121, 233, 99, 0.5) !important;
-    transform: translateY(-1px) !important;
+div[data-testid="stExpander"], div[data-testid="stDataFrame"] {{
+    background-color: var(--bg-card) !important; border-radius: 12px !important;
+    border: 1px solid var(--border-color) !important; box-shadow: 0 1px 3px var(--shadow-color) !important;
 }}
-
-/* 카드 컨테이너 요소들 */
-div[data-testid="stExpander"], 
-div[data-testid="stDataFrame"] {{
-    background-color: var(--bg-card) !important;
-    border-radius: 16px !important;
-    border: 1px solid var(--border-color) !important;
-    box-shadow: 0 4px 16px var(--shadow-color) !important;
-}}
-
 div[data-testid="stExpander"] summary {{
-    font-family: 'Nanum Gothic', sans-serif !important;
-    font-weight: 700 !important;
-    font-size: 17px !important;
-    color: var(--text-main) !important;
+    font-family: 'Noto Sans KR', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif !important;
+    font-weight: 600 !important; font-size: 15px !important; color: var(--text-main) !important;
 }}
-
-/* 지표 메트릭 박스 */
 div[data-testid="stMetric"] {{
-    background-color: var(--bg-metric) !important;
-    border: 1px solid var(--border-color) !important;
-    padding: 14px 18px !important;
-    border-radius: 14px !important;
-    box-shadow: 0 2px 6px var(--shadow-color) !important;
+    background-color: var(--bg-card) !important; border: 1px solid var(--border-color) !important;
+    padding: 16px !important; border-radius: 12px !important; box-shadow: 0 1px 3px var(--shadow-color) !important;
 }}
-
-/* 슬라이더 컬러 (#79E963) */
-.stSlider > div > div > div > div {{
-    background-color: #79E963 !important;
-}}
-
-/* Heading & Label */
+.stSlider > div > div > div > div {{ background-color: #10B981 !important; }}
 h1, h2, h3, h4, h5, h6, label, p {{
-    font-family: 'Nanum Gothic', sans-serif !important;
+    font-family: 'Noto Sans KR', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif !important;
     color: var(--text-main);
+}}
+
+/* 정렬 박스 강조 */
+.sort-box {{
+    background-color: var(--bg-card); border: 1px solid var(--border-color);
+    border-radius: 12px; padding: 12px 16px;
 }}
 </style>
 """, unsafe_allow_html=True)
 
-# === 🌟 데이터셋 후보 종목 리스트 ===
+# === 데이터셋 ===
 candidate_tickers = [
-    "TQQQ", "SOXL", "NVDL", "CONL", "SQQQ", "FNGU", "SPXL", "TSLL", "LABU", "UPRO", 
-    "MSTX", "MSTU", "SOXS", "TECL", "WEBL", "DPST", "FAS", "FAZ", "TNA", "TZA", 
-    "SPY", "QQQ", "IWM", "DIA", "VOO", "IVV", "GLD", "SLV", "SCHD", "JEPI", 
+    "TQQQ", "SOXL", "NVDL", "CONL", "SQQQ", "FNGU", "SPXL", "TSLL", "LABU", "UPRO",
+    "MSTX", "MSTU", "SOXS", "TECL", "WEBL", "DPST", "FAS", "FAZ", "TNA", "TZA",
+    "SPY", "QQQ", "IWM", "DIA", "VOO", "IVV", "GLD", "SLV", "SCHD", "JEPI",
     "NVDA", "TSLA", "AAPL", "MSFT", "AMZN", "GOOGL", "GOOG", "META", "AMD", "INTC",
     "PLTR", "SMCI", "COIN", "MSTR", "HOOD", "ROKU", "DKNG", "ARM", "AVGO", "QCOM",
     "MARA", "RIOT", "CLSK", "ASTS", "RKLB", "LUNR", "IONQ", "RIVN", "LCID", "NIO",
@@ -350,7 +229,7 @@ candidate_tickers = [
 ]
 
 known_etfs = set([
-    "TQQQ", "SOXL", "NVDL", "CONL", "SQQQ", "FNGU", "SPXL", "TSLL", "LABU", "UPRO", 
+    "TQQQ", "SOXL", "NVDL", "CONL", "SQQQ", "FNGU", "SPXL", "TSLL", "LABU", "UPRO",
     "MSTX", "MSTU", "SOXS", "TECL", "WEBL", "DPST", "FAS", "FAZ", "TNA", "TZA",
     "SPY", "QQQ", "IWM", "DIA", "VOO", "IVV", "GLD", "SLV", "SCHD", "JEPI", "JEPQ"
 ])
@@ -363,7 +242,6 @@ SECTOR_MAP = {
     'LLY': 'Healthcare', 'UNH': 'Healthcare', 'WMT': 'Consumer Defensive', 'XOM': 'Energy'
 }
 
-# === 🌟 배치 데이터 수집 함수 (SEC 10,000+ 티커) ===
 @st.cache_data(ttl=30)
 def load_all_data():
     raw_quotes = []
@@ -376,21 +254,15 @@ def load_all_data():
             all_symbols.extend(sec_tickers)
     except Exception:
         pass
-        
     all_symbols = list(dict.fromkeys(all_symbols))
-    
     try:
         session = requests.Session()
-        session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-        })
+        session.headers.update({'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'})
         session.get('https://fc.yahoo.com', timeout=4)
         crumb_resp = session.get('https://query2.finance.yahoo.com/v1/test/getcrumb', timeout=4)
         crumb = crumb_resp.text.strip()
-        
         batch_size = 150
         batches = [all_symbols[i:i+batch_size] for i in range(0, len(all_symbols), batch_size)]
-        
         def fetch_batch(b):
             sym_str = ','.join(b)
             url = f'https://query2.finance.yahoo.com/v7/finance/quote?symbols={sym_str}&crumb={crumb}'
@@ -401,14 +273,12 @@ def load_all_data():
             except Exception:
                 pass
             return []
-
         with ThreadPoolExecutor(max_workers=20) as executor:
             batch_results = executor.map(fetch_batch, batches)
             for res in batch_results:
                 raw_quotes.extend(res)
     except Exception:
         raw_quotes = []
-
     parsed = []
     for q in raw_quotes:
         sym = q.get('symbol')
@@ -419,681 +289,435 @@ def load_all_data():
             continue
         chg = round(q.get('regularMarketChangePercent', 0) or 0.0, 2)
         q_type = q.get('quoteType', '')
-        
         if q_type == 'ETF' or sym in known_etfs:
             sector = 'ETF'
         else:
             sector = q.get('sector', SECTOR_MAP.get(sym, '기타'))
             if not sector:
                 sector = '기타'
-                
         vol = q.get('regularMarketVolume', 0) or 0
         raw_cap = q.get('marketCap') or q.get('netAssets') or 100_000_000
         cap_b = round(raw_cap / 1_000_000_000, 2)
         if cap_b <= 0:
             cap_b = 0.01
-
         pe = round(q.get('trailingPE', 0) or 0.0, 2)
         pbr = round(q.get('priceToBook', 0) or 0.0, 2)
         div_yield = round((q.get('trailingAnnualDividendYield', 0) or q.get('dividendYield', 0) or 0.0) * 100, 2)
-
         parsed.append({
-            'Ticker': sym,
-            '종목명': q.get('shortName', sym) or sym,
-            '섹터': sector,
-            '현재가($)': cp,
-            '등락률(%)': chg,
-            '거래량': vol,
-            '시가총액(B$)': cap_b,
-            'PER': pe,
-            'PBR': pbr,
-            '배당수익률(%)': div_yield,
+            'Ticker': sym, '종목명': q.get('shortName', sym) or sym, '섹터': sector,
+            '현재가($)': cp, '등락률(%)': chg, '거래량': vol, '시가총액(B$)': cap_b,
+            'PER': pe, 'PBR': pbr, '배당수익률(%)': div_yield,
         })
-
     df_data = pd.DataFrame(parsed)
     if not df_data.empty:
         df_data = df_data.drop_duplicates(subset=['Ticker']).sort_values(by='거래량', ascending=False).reset_index(drop=True)
     return df_data
 
-# === 📌 왼쪽 사이드바 메뉴 네비게이션 ===
+# === AI 응답 생성 ===
+def get_ai_response(context, user_input, history):
+    if not GEMINI_API_KEY or GEMINI_API_KEY == "여기에_내API_키_입력":
+        return "⚠️ `.env` 파일에 `GEMINI_API_KEY`를 설정해주세요."
+    try:
+        genai.configure(api_key=GEMINI_API_KEY)
+        sys_prompt = "너는 미국 주식 전문 AI 애널리스트 '아보미 AI'야. 친절하고 명확하게 한국어로 답변해. 투자 최종 책임은 본인에게 있음을 자연스럽게 안내해."
+        if context:
+            sys_prompt += f"\n\n[사용자가 현재 보고 있는 실시간 데이터]\n{context}"
+        try:
+            model = genai.GenerativeModel("gemini-3.6-flash", system_instruction=sys_prompt)
+        except Exception:
+            model = genai.GenerativeModel("gemini-1.5-flash", system_instruction=sys_prompt)
+        h = []
+        for m in history:
+            h.append({"role": "user" if m["role"] == "user" else "model", "parts": [m["content"]]})
+        chat = model.start_chat(history=h)
+        response = chat.send_message(user_input)
+        return response.text
+    except Exception as e:
+        return f"❌ 오류: {e}"
+
+# === 사이드바 ===
 with st.sidebar:
     if logo_b64:
-        st.markdown(f"""
-        <div class="abomi-brand">
-            <img src="data:image/jpeg;base64,{logo_b64}" class="abomi-logo" style="height: 38px;" alt="Abomi Logo">
-            <div class="abomi-title-group">
-                <div class="abomi-title" style="font-size: 24px;">
-                    Abomi
-                </div>
-            </div>
-        </div>
-        <p style="font-size: 13px; color: var(--text-sub); margin: 2px 0 10px 0;">아는 만큼 보이는 미국 주식</p>
-        """, unsafe_allow_html=True)
+        st.markdown(f'<div class="abomi-brand"><img src="data:image/jpeg;base64,{logo_b64}" class="abomi-logo" alt="Abomi"><span class="abomi-title">Abomi</span></div>', unsafe_allow_html=True)
     else:
-        st.markdown("<h2 style='margin:0;'>Abomi</h2><p style='font-size:12px; color:gray;'>아는 만큼 보이는 미국 주식</p>", unsafe_allow_html=True)
-
+        st.markdown("<span class='abomi-title'>Abomi</span>", unsafe_allow_html=True)
     st.markdown("---")
-    
-    selected_page = st.radio(
-        "📌 메인 메뉴",
-        [
-            "📊 실시간 주가",
-            "💼 내 보유 주식",
-            "💱 국제 환율",
-            "🗺️ 등락률 트리맵",
-            "💬 AI 금융 챗봇"
-        ],
-        index=0
-    )
-    
+    selected_page = st.radio("메뉴", ["📊 실시간 주가", "💼 내 보유 주식", "💱 국제 환율", "🗺️ 등락률 트리맵"], index=0, label_visibility="collapsed")
     st.markdown("---")
-    st.markdown("#### ⚡ 시세 갱신 설정")
-    refresh_mode = st.selectbox(
-        "시세 업데이트 방식",
-        ["수동 갱신 (핀비즈 기본)", "30초 자동 갱신", "60초 자동 갱신"],
-        index=0,
-        help="핀비즈(Finviz) 무료 기본형처럼 수동 갱신을 사용하거나, 30초/60초 배경 자동 갱신을 선택할 수 있습니다."
-    )
-    
-    if st.button("🔄 새로고침", use_container_width=True, key="sidebar_refresh_btn"):
+    if st.button("🔄 새로고침", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
-    st.markdown("<p style='font-size:11px; color:var(--text-sub); margin-top:4px; text-align:center;'>💡 실시간 시세를 즉시 받아옵니다.</p>", unsafe_allow_html=True)
-
     st.markdown("---")
-    st.markdown("#### 🎨 화면 테마 설정")
-    theme_options = ["System (시스템)", "Light (밝은 화면)", "Dark (어두운 회색)"]
-    curr_theme = st.session_state.get("theme_mode", "System")
-    t_idx = 0 if curr_theme == "System" else (1 if curr_theme == "Light" else 2)
-    chosen_theme = st.radio("테마 선택", theme_options, index=t_idx, key="sidebar_theme_radio")
-    
-    new_t = "System"
-    if "Light" in chosen_theme:
-        new_t = "Light"
-    elif "Dark" in chosen_theme:
-        new_t = "Dark"
-        
-    if new_t != st.session_state["theme_mode"]:
-        st.session_state["theme_mode"] = new_t
+    theme_choice = st.selectbox("테마", ["Light", "Dark", "System"], index=["Light", "Dark", "System"].index(st.session_state.get("theme_mode", "Light")))
+    if theme_choice != st.session_state["theme_mode"]:
+        st.session_state["theme_mode"] = theme_choice
         st.rerun()
 
-# 상단 헤더 타이틀 바
-head_col1, head_col2 = st.columns([7.5, 2.5])
-with head_col1:
-    if logo_b64:
-        st.markdown(f"""
-        <div class="abomi-brand">
-            <img src="data:image/jpeg;base64,{logo_b64}" class="abomi-logo" alt="Abomi Logo">
-            <div class="abomi-title-group">
-                <div class="abomi-title">
-                    Abomi
-                    <span class="abomi-sub-tag">아는 만큼 보이는 미국 주식</span>
-                </div>
-                <p class="abomi-subtitle">실시간으로 종목을 자유롭게 검색하고 정밀 분석할 수 있습니다.</p>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-    else:
-        st.markdown("""
-        <div class="abomi-title-group">
-            <div class="abomi-title">
-                Abomi
-                <span class="abomi-sub-tag">아는 만큼 보이는 미국 주식</span>
-            </div>
-            <p class="abomi-subtitle">실시간으로 종목을 자유롭게 검색하고 정밀 분석할 수 있습니다.</p>
-        </div>
-        """, unsafe_allow_html=True)
+# === 상단 헤더 ===
+if logo_b64:
+    st.markdown(f'<div class="abomi-brand" style="margin-bottom:6px;"><img src="data:image/jpeg;base64,{logo_b64}" class="abomi-logo" style="height:40px;" alt="Abomi"><div><div class="abomi-title" style="font-size:24px;">Abomi</div><p class="abomi-subtitle">아는 만큼 보이는 미국 주식</p></div></div>', unsafe_allow_html=True)
+else:
+    st.markdown('<div style="margin-bottom:6px;"><div class="abomi-title" style="font-size:24px;">Abomi</div><p class="abomi-subtitle">아는 만큼 보이는 미국 주식</p></div>', unsafe_allow_html=True)
 
-with head_col2:
-    st.write("")
-    if st.button("🔄 새로고침", use_container_width=True, key="top_refresh_btn"):
-        st.cache_data.clear()
-        st.rerun()
-    st.markdown("<p style='font-size:12px; color:var(--text-sub); margin-top:4px; text-align:center;'>💡 실시간 시세를 즉시 받아올 수 있습니다.</p>", unsafe_allow_html=True)
+# ═══════════════════════════════════════════════════
+# 메인 레이아웃: 좌측 콘텐츠 (70%) + 우측 AI 챗봇 (30%)
+# ═══════════════════════════════════════════════════
+ai_context = ""
+context_label = ""
 
-st.markdown("<div style='margin-bottom: 15px;'></div>", unsafe_allow_html=True)
+main_col, chat_col = st.columns([7, 3])
 
-# =========================================================
-# 📄 PAGE 1: 📊 실시간 주가 (Finviz 스크리너 & IPO 차트)
-# =========================================================
-if selected_page == "📊 실시간 주가":
-    df = load_all_data()
+with main_col:
 
-    with st.expander("🔍 필터 검색", expanded=True):
-        max_cap_val = float(df["시가총액(B$)"].max()) if not df.empty else 5000.0
-        max_price_val = float(df["현재가($)"].max()) if not df.empty else 2000.0
+    # =============================================
+    # PAGE 1: 📊 실시간 주가
+    # =============================================
+    if selected_page == "📊 실시간 주가":
+        df = load_all_data()
 
-        f_col1, f_col2, f_col3 = st.columns(3)
-        with f_col1:
-            min_cap, max_cap = st.slider(
-                "시가총액 범위 (B$)",
-                min_value=0.0,
-                max_value=max_cap_val,
-                value=(0.0, max_cap_val),
-                step=10.0
-            )
-            max_per = st.number_input("최대 PER (0 입력 시 PER 무시)", min_value=0, value=0)
+        # --- 필터 + 정렬 (나란히 배치) ---
+        filter_zone, sort_zone = st.columns([7, 3])
 
-        with f_col2:
-            min_price, max_price = st.slider(
-                "주가 범위 ($)", 
-                min_value=0.0, 
-                max_value=max_price_val, 
-                value=(0.0, max_price_val)
-            )
-            min_dividend = st.number_input("최소 배당수익률 (%)", min_value=0.0, value=0.0, step=0.1)
+        with filter_zone:
+            with st.expander("🔍 필터 조건", expanded=False):
+                # 섹터 필터
+                if not df.empty:
+                    all_sectors = sorted(df["섹터"].dropna().unique().tolist())
+                    sel_sectors = st.multiselect("섹터", all_sectors, default=[], placeholder="전체 섹터")
+                else:
+                    sel_sectors = []
 
-        with f_col3:
-            min_volume = st.number_input("최소 거래량 (주)", min_value=0, value=0, step=100000)
-            sort_option = st.selectbox(
-                "정렬 조건",
-                [
-                    "거래량 많은순",
-                    "시가총액 높은순", 
-                    "상승률 높은순 (급등)", 
-                    "하락률 높은순 (급락)", 
-                    "이름 오름차순 (A-Z)", 
-                    "이름 내림차순 (Z-A)"
-                ]
-            )
+                # 수치 필터 Row 1
+                f1, f2, f3 = st.columns(3)
+                with f1:
+                    max_cap_val = float(df["시가총액(B$)"].max()) if not df.empty else 5000.0
+                    min_cap, max_cap = st.slider("시가총액 (B$)", 0.0, max_cap_val, (0.0, max_cap_val), step=10.0)
+                with f2:
+                    max_price_val = float(df["현재가($)"].max()) if not df.empty else 2000.0
+                    min_price, max_price = st.slider("주가 ($)", 0.0, max_price_val, (0.0, max_price_val))
+                with f3:
+                    min_volume = st.number_input("최소 거래량", min_value=0, value=0, step=100000)
 
-    # 필터링 적용
-    filtered_df = df[
-        (df["시가총액(B$)"] >= min_cap) & 
-        (df["시가총액(B$)"] <= max_cap) &
-        (df["현재가($)"] >= min_price) & 
-        (df["현재가($)"] <= max_price) &
-        (df["거래량"] >= min_volume) &
-        (df["배당수익률(%)"] >= min_dividend)
-    ]
+                # 수치 필터 Row 2
+                f4, f5, f6 = st.columns(3)
+                with f4:
+                    max_per = st.number_input("최대 PER (0=무시)", min_value=0, value=0)
+                with f5:
+                    max_pbr = st.number_input("최대 PBR (0=무시)", min_value=0.0, value=0.0, step=0.5)
+                with f6:
+                    min_dividend = st.number_input("최소 배당률 (%)", min_value=0.0, value=0.0, step=0.1)
 
-    if max_per > 0:
-        filtered_df = filtered_df[(filtered_df["PER"] > 0) & (filtered_df["PER"] <= max_per)]
+        with sort_zone:
+            st.markdown('<div class="sort-box">', unsafe_allow_html=True)
+            sort_option = st.selectbox("📌 정렬", [
+                "거래량 많은순", "시가총액 높은순",
+                "상승률 높은순", "하락률 높은순",
+                "PER 낮은순", "배당률 높은순", "이름순 (A-Z)"
+            ])
+            st.markdown('</div>', unsafe_allow_html=True)
 
-    if sort_option == "거래량 많은순":
-        filtered_df = filtered_df.sort_values(by="거래량", ascending=False)
-    elif sort_option == "시가총액 높은순":
-        filtered_df = filtered_df.sort_values(by="시가총액(B$)", ascending=False)
-    elif sort_option == "상승률 높은순 (급등)":
-        filtered_df = filtered_df.sort_values(by="등락률(%)", ascending=False)
-    elif sort_option == "하락률 높은순 (급락)":
-        filtered_df = filtered_df.sort_values(by="등락률(%)", ascending=True)
-    elif sort_option == "이름 오름차순 (A-Z)":
-        filtered_df = filtered_df.sort_values(by="종목명", ascending=True)
-    elif sort_option == "이름 내림차순 (Z-A)":
-        filtered_df = filtered_df.sort_values(by="종목명", ascending=False)
+        # --- 필터 적용 ---
+        filtered_df = df.copy()
+        if not filtered_df.empty:
+            filtered_df = filtered_df[
+                (filtered_df["시가총액(B$)"] >= min_cap) & (filtered_df["시가총액(B$)"] <= max_cap) &
+                (filtered_df["현재가($)"] >= min_price) & (filtered_df["현재가($)"] <= max_price) &
+                (filtered_df["거래량"] >= min_volume) & (filtered_df["배당수익률(%)"] >= min_dividend)
+            ]
+            if sel_sectors:
+                filtered_df = filtered_df[filtered_df["섹터"].isin(sel_sectors)]
+            if max_per > 0:
+                filtered_df = filtered_df[(filtered_df["PER"] > 0) & (filtered_df["PER"] <= max_per)]
+            if max_pbr > 0:
+                filtered_df = filtered_df[(filtered_df["PBR"] > 0) & (filtered_df["PBR"] <= max_pbr)]
 
-    st.markdown("---")
-    st.caption(f"🟢 미국 전체 상장 주식 & ETF 총 {len(df):,}개 종목 실시간 시세 연동 (업데이트 방식: {refresh_mode})")
-    st.subheader(f"검색 결과 : 총 {len(filtered_df):,}개 종목")
+        # --- 정렬 적용 ---
+        if sort_option == "거래량 많은순":
+            filtered_df = filtered_df.sort_values(by="거래량", ascending=False)
+        elif sort_option == "시가총액 높은순":
+            filtered_df = filtered_df.sort_values(by="시가총액(B$)", ascending=False)
+        elif sort_option == "상승률 높은순":
+            filtered_df = filtered_df.sort_values(by="등락률(%)", ascending=False)
+        elif sort_option == "하락률 높은순":
+            filtered_df = filtered_df.sort_values(by="등락률(%)", ascending=True)
+        elif sort_option == "PER 낮은순":
+            per_valid = filtered_df[filtered_df["PER"] > 0]
+            per_zero = filtered_df[filtered_df["PER"] <= 0]
+            filtered_df = pd.concat([per_valid.sort_values(by="PER", ascending=True), per_zero])
+        elif sort_option == "배당률 높은순":
+            filtered_df = filtered_df.sort_values(by="배당수익률(%)", ascending=False)
+        elif sort_option == "이름순 (A-Z)":
+            filtered_df = filtered_df.sort_values(by="종목명", ascending=True)
 
-    table_col, chart_col = st.columns([6, 4])
-
-    with table_col:
-        st.caption("👆 아래 표에서 원하는 주식을 클릭하면 우측 창에 상장부터 현재까지 전체 차트가 나타납니다.")
-        event = st.dataframe(
-            filtered_df.style.format({
-                "현재가($)": "${:.2f}", 
-                "시가총액(B$)": "${:.2f}", 
-                "등락률(%)": "{:.2f}%",
-                "거래량": "{:,.0f}"
-            }), 
-            use_container_width=True, 
-            hide_index=True,
-            on_select="rerun",           
-            selection_mode="single-row",
-            height=580
-        )
-
-    with chart_col:
-        if len(event.selection.rows) > 0:
-            selected_row_index = event.selection.rows[0]
-            row_data = filtered_df.iloc[selected_row_index]
-            selected_ticker = row_data["Ticker"]
-            
-            st.subheader(f"📊 {selected_ticker} ({row_data['종목명']})")
-            
-            m_col1, m_col2 = st.columns(2)
-            with m_col1:
-                st.metric("현재가", f"${row_data['현재가($)']:.2f}", f"{row_data['등락률(%)']:+.2f}%")
-                st.markdown(f"**시가총액/자산**: `${row_data['시가총액(B$)']:.2f}B`")
-                st.markdown(f"**일일 거래량**: `{row_data['거래량']:,} 주`")
-            with m_col2:
-                st.markdown(f"**섹터**: `{row_data['섹터']}`")
-                st.markdown(f"**PER**: `{row_data['PER']}` | **PBR**: `{row_data['PBR']}`")
-                st.markdown(f"**배당수익률**: `{row_data['배당수익률(%)']}%`")
-
-            st.markdown("---")
-            
-            chart_data = yf.Ticker(selected_ticker).history(period="max")
-            
-            if not chart_data.empty:
-                fig_chart = go.Figure(data=[go.Candlestick(
-                    x=chart_data.index,
-                    open=chart_data['Open'],
-                    high=chart_data['High'],
-                    low=chart_data['Low'],
-                    close=chart_data['Close'],
-                    name=selected_ticker,
-                    increasing_line_color='red',
-                    decreasing_line_color='blue'
-                )])
-                
-                is_dark_theme = (st.session_state.get("theme_mode") == "Dark")
-                plotly_template = "plotly_dark" if is_dark_theme else "plotly_white"
-                plotly_plot_bg = "#282A2D" if is_dark_theme else "#FFFFFF"
-                plotly_font_color = "#F3F4F6" if is_dark_theme else "#1F2937"
-
-                fig_chart.update_layout(
-                    title=f"{selected_ticker} 상장(IPO)부터 현재까지 전체 캔들스틱 차트",
-                    yaxis_title="Price ($)",
-                    margin=dict(l=10, r=10, t=35, b=10),
-                    height=380,
-                    xaxis_rangeslider_visible=False,
-                    template=plotly_template,
-                    paper_bgcolor='rgba(0,0,0,0)',
-                    plot_bgcolor=plotly_plot_bg,
-                    font=dict(family="Nanum Gothic, sans-serif", color=plotly_font_color)
-                )
-                
-                fig_chart.update_xaxes(
-                    rangeselector=dict(
-                        buttons=list([
-                            dict(count=1, label="1M", step="month", stepmode="backward"),
-                            dict(count=6, label="6M", step="month", stepmode="backward"),
-                            dict(count=1, label="1Y", step="year", stepmode="backward"),
-                            dict(count=5, label="5Y", step="year", stepmode="backward"),
-                            dict(step="all", label="전체 (IPO부터)")
-                        ]),
-                        bgcolor="#282A2D" if is_dark_theme else "#F8FAFC",
-                        activecolor="#79E963",
-                        font=dict(color="#F3F4F6" if is_dark_theme else "#1F2937")
-                    )
-                )
-                st.plotly_chart(fig_chart, use_container_width=True)
-            else:
-                st.warning(f"{selected_ticker}의 차트 데이터를 불러오지 못했습니다.")
+        # --- 결과 표시 ---
+        is_filtered = len(filtered_df) < len(df)
+        if is_filtered:
+            st.caption(f"필터 적용 · **{len(filtered_df):,}**개 종목")
         else:
-            st.info("👈 좌측 표에서 주식을 선택하면 우측에 상장부터 현재까지의 전체 캔들스틱 차트와 핵심 지표 요약이 나타납니다.")
+            st.caption(f"전체 **{len(df):,}**개 종목")
 
-# =========================================================
-# 📄 PAGE 2: 💼 내 보유 주식 (Portfolio Tracker)
-# =========================================================
-elif selected_page == "💼 내 보유 주식":
-    st.subheader("💼 내 포트폴리오 관리 및 수익률 분석")
-    st.caption("실시간 주가와 연동하여 보유 주식의 현재 평가금액, 손익률, 예상 배당금을 자동으로 산출합니다.")
+        table_sub, chart_sub = st.columns([6, 4])
 
-    df_market = load_all_data()
-
-    # 포트폴리오 실시간 계산
-    port_list = st.session_state["my_portfolio"]
-    port_records = []
-    
-    total_invested = 0.0
-    total_current_val = 0.0
-    
-    for item in port_list:
-        tick = item["Ticker"]
-        buy_price = item["매수가($)"]
-        qty = item["보유주수"]
-        
-        # 시장 실시간 가 추출
-        match = df_market[df_market["Ticker"] == tick]
-        if not match.empty:
-            curr_price = float(match.iloc[0]["현재가($)"])
-            name = str(match.iloc[0]["종목명"])
-            sector = str(match.iloc[0]["섹터"])
-            div_y = float(match.iloc[0]["배당수익률(%)"])
-        else:
-            curr_price = buy_price
-            name = item.get("종목명", tick)
-            sector = "기타"
-            div_y = 0.0
-            
-        invested = buy_price * qty
-        current_val = curr_price * qty
-        profit_val = current_val - invested
-        profit_pct = ((curr_price - buy_price) / buy_price * 100) if buy_price > 0 else 0.0
-        annual_div = current_val * (div_y / 100.0)
-
-        total_invested += invested
-        total_current_val += current_val
-
-        port_records.append({
-            "Ticker": tick,
-            "종목명": name,
-            "섹터": sector,
-            "매수가($)": buy_price,
-            "현재가($)": curr_price,
-            "보유주수": qty,
-            "총 투자금($)": invested,
-            "평가금액($)": current_val,
-            "평가손익($)": profit_val,
-            "수익률(%)": profit_pct,
-            "예상 연배당($)": annual_div
-        })
-
-    df_port = pd.DataFrame(port_records)
-    total_profit_val = total_current_val - total_invested
-    total_profit_pct = ((total_current_val - total_invested) / total_invested * 100) if total_invested > 0 else 0.0
-    total_annual_div = df_port["예상 연배당($)"].sum() if not df_port.empty else 0.0
-
-    # 핵심 요약 카드
-    p_col1, p_col2, p_col3, p_col4 = st.columns(4)
-    with p_col1:
-        st.metric("총 매수 금액", f"${total_invested:,.2f}")
-    with p_col2:
-        st.metric("현재 평가 금액", f"${total_current_val:,.2f}")
-    with p_col3:
-        st.metric("총 평가 손익", f"${total_profit_val:+,.2f}", f"{total_profit_pct:+.2f}%")
-    with p_col4:
-        st.metric("예상 연간 배당금", f"${total_annual_div:,.2f}", f"{(total_annual_div/total_current_val*100):.2f}%" if total_current_val > 0 else "0.00%")
-
-    st.markdown("---")
-
-    p_tab1, p_tab2 = st.columns([6, 4])
-
-    with p_tab1:
-        st.subheader("📋 보유 종목 상세 현황")
-        if not df_port.empty:
-            st.dataframe(
-                df_port.style.format({
-                    "매수가($)": "${:.2f}",
-                    "현재가($)": "${:.2f}",
-                    "총 투자금($)": "${:,.2f}",
-                    "평가금액($)": "${:,.2f}",
-                    "평가손익($)": "${:+,.2f}",
-                    "수익률(%)": "{:+.2f}%",
-                    "예상 연배당($)": "${:,.2f}"
+        with table_sub:
+            event = st.dataframe(
+                filtered_df.style.format({
+                    "현재가($)": "${:.2f}", "시가총액(B$)": "${:.2f}",
+                    "등락률(%)": "{:.2f}%", "거래량": "{:,.0f}"
                 }),
-                use_container_width=True,
-                hide_index=True
+                use_container_width=True, hide_index=True,
+                on_select="rerun", selection_mode="single-row", height=560
             )
-        else:
-            st.info("보유 중인 주식이 없습니다. 아래 추가 폼에서 종목을 입력해보세요.")
 
-        with st.expander("➕ 새 보유 종목 추가 / 수정", expanded=False):
-            with st.form("add_stock_form"):
-                f_col1, f_col2, f_col3 = st.columns(3)
-                with f_col1:
-                    new_ticker = st.text_input("티커 코드 (예: NVDA, TSLA)", value="").strip().upper()
-                with f_col2:
-                    new_buy_price = st.number_input("매수 단가 ($)", min_value=0.01, value=100.0, step=1.0)
-                with f_col3:
-                    new_qty = st.number_input("보유 수량 (주)", min_value=1, value=10, step=1)
+        with chart_sub:
+            if len(event.selection.rows) > 0:
+                row_idx = event.selection.rows[0]
+                row_data = filtered_df.iloc[row_idx]
+                sel_ticker = row_data["Ticker"]
 
-                submit_btn = st.form_submit_button("포트폴리오에 저장")
-                if submit_btn and new_ticker:
-                    # 기존 종목 업데이트 또는 새 종목 추가
-                    found = False
-                    for item in st.session_state["my_portfolio"]:
-                        if item["Ticker"] == new_ticker:
-                            item["매수가($)"] = new_buy_price
-                            item["보유주수"] = new_qty
-                            found = True
-                            break
-                    if not found:
-                        st.session_state["my_portfolio"].append({
-                            "Ticker": new_ticker,
-                            "종목명": new_ticker,
-                            "매수가($)": new_buy_price,
-                            "보유주수": new_qty
-                        })
-                    st.success(f"{new_ticker} 종목이 포트폴리오에 반영되었습니다!")
-                    st.rerun()
+                st.subheader(sel_ticker)
+                st.caption(row_data['종목명'])
 
-    with p_tab2:
-        st.subheader("📊 포트폴리오 자산 비중")
-        if not df_port.empty:
-            fig_pie = px.pie(
-                df_port, 
-                values='평가금액($)', 
-                names='Ticker', 
-                hole=0.4,
-                title="종목별 보유 자산 비중",
-                color_discrete_sequence=px.colors.qualitative.Bold
-            )
-            is_dark_theme = (st.session_state.get("theme_mode") == "Dark")
-            fig_pie.update_layout(
-                template="plotly_dark" if is_dark_theme else "plotly_white",
-                paper_bgcolor='rgba(0,0,0,0)',
-                font=dict(family="Nanum Gothic, sans-serif", color="#F3F4F6" if is_dark_theme else "#1F2937"),
-                height=380
-            )
-            st.plotly_chart(fig_pie, use_container_width=True)
+                mc1, mc2 = st.columns(2)
+                with mc1:
+                    st.metric("현재가", f"${row_data['현재가($)']:.2f}", f"{row_data['등락률(%)']:+.2f}%")
+                    st.markdown(f"**시총** `${row_data['시가총액(B$)']:.2f}B` · **거래량** `{row_data['거래량']:,}`")
+                with mc2:
+                    st.markdown(f"**섹터** `{row_data['섹터']}`")
+                    st.markdown(f"**PER** `{row_data['PER']}` · **PBR** `{row_data['PBR']}`")
+                    st.markdown(f"**배당** `{row_data['배당수익률(%)']}%`")
 
-# =========================================================
-# 📄 PAGE 3: 💱 국제 환율 & 원자재 (Global FX & Commodities)
-# =========================================================
-elif selected_page == "💱 국제 환율":
-    st.subheader("💱 글로벌 환율, 원자재 및 시장 지표")
-    st.caption("실시간 국제 외환 시장 환율, 금, 원유, 미국 국채 금리 및 주요 가상자산 시세를 조회합니다.")
+                st.markdown("---")
+                chart_data = yf.Ticker(sel_ticker).history(period="max")
+                if not chart_data.empty:
+                    fig = go.Figure(data=[go.Candlestick(
+                        x=chart_data.index, open=chart_data['Open'], high=chart_data['High'],
+                        low=chart_data['Low'], close=chart_data['Close'], name=sel_ticker,
+                        increasing_line_color='red', decreasing_line_color='blue'
+                    )])
+                    is_dark = st.session_state.get("theme_mode") == "Dark"
+                    fig.update_layout(
+                        title=f"{sel_ticker} 전체 차트", yaxis_title="$",
+                        margin=dict(l=10, r=10, t=35, b=10), height=350,
+                        xaxis_rangeslider_visible=False,
+                        template="plotly_dark" if is_dark else "plotly_white",
+                        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor="#1F2937" if is_dark else "#FFFFFF",
+                        font=dict(family="Noto Sans KR, sans-serif", color="#F9FAFB" if is_dark else "#111827")
+                    )
+                    fig.update_xaxes(rangeselector=dict(
+                        buttons=[dict(count=1,label="1M",step="month",stepmode="backward"),
+                                 dict(count=6,label="6M",step="month",stepmode="backward"),
+                                 dict(count=1,label="1Y",step="year",stepmode="backward"),
+                                 dict(count=5,label="5Y",step="year",stepmode="backward"),
+                                 dict(step="all",label="전체")],
+                        bgcolor="#1F2937" if is_dark else "#F9FAFB", activecolor="#10B981",
+                        font=dict(color="#F9FAFB" if is_dark else "#111827")
+                    ))
+                    st.plotly_chart(fig, use_container_width=True)
 
-    fx_map = {
-        "원/달러 환율 (USD/KRW)": "KRW=X",
-        "유로/달러 (EUR/USD)": "EURUSD=X",
-        "100엔/원 (JPY/KRW)": "JPYKRW=X",
-        "금 선물 (Gold)": "GC=F",
-        "WTI 유가 (Crude Oil)": "CL=F",
-        "미국 10년물 국채 금리": "^TNX",
-        "비트코인 (BTC/USD)": "BTC-USD"
-    }
-
-    @st.cache_data(ttl=30)
-    def fetch_fx_data():
-        records = []
-        tickers_str = ' '.join(fx_map.values())
-        try:
-            data = yf.Tickers(tickers_str)
-            for name, sym in fx_map.items():
-                try:
-                    h = data.tickers[sym].history(period='5d')
-                    if not h.empty:
-                        cp = float(h['Close'].iloc[-1])
-                        prev = float(h['Close'].iloc[-2]) if len(h) > 1 else cp
-                        chg = round(((cp - prev) / prev) * 100, 2)
-                        records.append({
-                            "Symbol": sym,
-                            "지표명": name,
-                            "현재가": cp,
-                            "전일대비(%)": chg
-                        })
-                except Exception:
-                    pass
-        except Exception:
-            pass
-        return pd.DataFrame(records)
-
-    df_fx = fetch_fx_data()
-
-    # 메트릭 그리드 배치
-    if not df_fx.empty:
-        cols = st.columns(4)
-        for idx, row in df_fx.iterrows():
-            col_idx = idx % 4
-            symbol = row["Symbol"]
-            val_str = f"{row['현재가']:,.2f}"
-            if symbol == "KRW=X":
-                val_str = f"₩{row['현재가']:,.2f}"
-            elif symbol == "^TNX":
-                val_str = f"{row['현재가']:.2f}%"
-            elif symbol == "BTC-USD":
-                val_str = f"${row['현재가']:,.0f}"
+                # AI 컨텍스트 설정
+                ai_context = f"종목: {sel_ticker} ({row_data['종목명']})\n현재가: ${row_data['현재가($)']:.2f} ({row_data['등락률(%)']:+.2f}%)\n시총: ${row_data['시가총액(B$)']:.2f}B | PER: {row_data['PER']} | PBR: {row_data['PBR']}\n배당: {row_data['배당수익률(%)']}% | 거래량: {row_data['거래량']:,}\n섹터: {row_data['섹터']}"
+                context_label = f"📍 {sel_ticker} 조회 중"
             else:
-                val_str = f"${row['현재가']:,.2f}"
+                st.info("👈 종목을 선택하면 차트가 표시됩니다.")
+                context_label = "📍 실시간 시세"
 
-            with cols[col_idx]:
-                st.metric(row["지표명"], val_str, f"{row['전일대비(%)']:+.2f}%")
+    # =============================================
+    # PAGE 2: 💼 내 보유 주식
+    # =============================================
+    elif selected_page == "💼 내 보유 주식":
+        st.subheader("💼 내 포트폴리오")
+        df_market = load_all_data()
+        port_list = st.session_state["my_portfolio"]
+        port_records = []
+        total_invested = 0.0
+        total_current_val = 0.0
+        for item in port_list:
+            tick = item["Ticker"]; buy_price = item["매수가($)"]; qty = item["보유주수"]
+            match = df_market[df_market["Ticker"] == tick]
+            if not match.empty:
+                curr_price = float(match.iloc[0]["현재가($)"]); name = str(match.iloc[0]["종목명"])
+                sector = str(match.iloc[0]["섹터"]); div_y = float(match.iloc[0]["배당수익률(%)"])
+            else:
+                curr_price = buy_price; name = item.get("종목명", tick); sector = "기타"; div_y = 0.0
+            invested = buy_price * qty; current_val = curr_price * qty
+            profit_val = current_val - invested
+            profit_pct = ((curr_price - buy_price) / buy_price * 100) if buy_price > 0 else 0.0
+            annual_div = current_val * (div_y / 100.0)
+            total_invested += invested; total_current_val += current_val
+            port_records.append({
+                "Ticker": tick, "종목명": name, "섹터": sector, "매수가($)": buy_price,
+                "현재가($)": curr_price, "보유주수": qty, "총 투자금($)": invested,
+                "평가금액($)": current_val, "평가손익($)": profit_val,
+                "수익률(%)": profit_pct, "예상 연배당($)": annual_div
+            })
+        df_port = pd.DataFrame(port_records)
+        total_profit_val = total_current_val - total_invested
+        total_profit_pct = ((total_current_val - total_invested) / total_invested * 100) if total_invested > 0 else 0.0
+        total_annual_div = df_port["예상 연배당($)"].sum() if not df_port.empty else 0.0
 
-    st.markdown("---")
+        pc1, pc2, pc3, pc4 = st.columns(4)
+        with pc1: st.metric("총 매수금", f"${total_invested:,.0f}")
+        with pc2: st.metric("평가금액", f"${total_current_val:,.0f}")
+        with pc3: st.metric("평가손익", f"${total_profit_val:+,.0f}", f"{total_profit_pct:+.1f}%")
+        with pc4: st.metric("연간 배당", f"${total_annual_div:,.0f}", f"{(total_annual_div/total_current_val*100):.1f}%" if total_current_val > 0 else "0%")
+        st.markdown("---")
 
-    # 차트 선택
-    fx_choice = st.selectbox("📊 상세 차트 조회 지표 선택", list(fx_map.keys()), index=0)
-    chosen_sym = fx_map[fx_choice]
+        pt1, pt2 = st.columns([6, 4])
+        with pt1:
+            if not df_port.empty:
+                st.dataframe(df_port.style.format({
+                    "매수가($)": "${:.2f}", "현재가($)": "${:.2f}", "총 투자금($)": "${:,.0f}",
+                    "평가금액($)": "${:,.0f}", "평가손익($)": "${:+,.0f}", "수익률(%)": "{:+.1f}%", "예상 연배당($)": "${:,.0f}"
+                }), use_container_width=True, hide_index=True)
+            with st.expander("➕ 종목 추가", expanded=False):
+                with st.form("add_stock_form"):
+                    fc1, fc2, fc3 = st.columns(3)
+                    with fc1: new_ticker = st.text_input("티커 (예: NVDA)", value="").strip().upper()
+                    with fc2: new_buy_price = st.number_input("매수가 ($)", min_value=0.01, value=100.0, step=1.0)
+                    with fc3: new_qty = st.number_input("수량 (주)", min_value=1, value=10, step=1)
+                    if st.form_submit_button("저장") and new_ticker:
+                        found = False
+                        for item in st.session_state["my_portfolio"]:
+                            if item["Ticker"] == new_ticker:
+                                item["매수가($)"] = new_buy_price; item["보유주수"] = new_qty; found = True; break
+                        if not found:
+                            st.session_state["my_portfolio"].append({"Ticker": new_ticker, "종목명": new_ticker, "매수가($)": new_buy_price, "보유주수": new_qty})
+                        st.success(f"{new_ticker} 반영 완료"); st.rerun()
+        with pt2:
+            if not df_port.empty:
+                fig_pie = px.pie(df_port, values='평가금액($)', names='Ticker', hole=0.4, color_discrete_sequence=px.colors.qualitative.Bold)
+                is_dark = st.session_state.get("theme_mode") == "Dark"
+                fig_pie.update_layout(template="plotly_dark" if is_dark else "plotly_white", paper_bgcolor='rgba(0,0,0,0)',
+                    font=dict(family="Noto Sans KR, sans-serif", color="#F9FAFB" if is_dark else "#111827"), height=350, margin=dict(t=20, b=20))
+                st.plotly_chart(fig_pie, use_container_width=True)
 
-    with st.spinner(f"{fx_choice} 실시간 데이터 불러오는 중..."):
-        fx_chart_data = yf.Ticker(chosen_sym).history(period="5y")
-        if not fx_chart_data.empty:
-            fig_fx = go.Figure()
-            fig_fx.add_trace(go.Scatter(
-                x=fx_chart_data.index,
-                y=fx_chart_data['Close'],
-                mode='lines',
-                name=fx_choice,
-                line=dict(color='#79E963', width=2)
-            ))
-            
-            is_dark_theme = (st.session_state.get("theme_mode") == "Dark")
-            plotly_template = "plotly_dark" if is_dark_theme else "plotly_white"
-            plotly_plot_bg = "#282A2D" if is_dark_theme else "#FFFFFF"
-            plotly_font_color = "#F3F4F6" if is_dark_theme else "#1F2937"
+        # AI 컨텍스트
+        port_summary = ", ".join([f"{p['Ticker']}({p['수익률(%)']:+.1f}%)" for p in port_records])
+        ai_context = f"포트폴리오 현황:\n총 투자금: ${total_invested:,.0f} | 평가금액: ${total_current_val:,.0f} | 수익률: {total_profit_pct:+.1f}%\n연간 배당: ${total_annual_div:,.0f}\n보유 종목: {port_summary}"
+        context_label = "📍 포트폴리오 분석 중"
 
-            fig_fx.update_layout(
-                title=f"{fx_choice} 5년 추이 차트",
-                yaxis_title="Price / Rate",
-                margin=dict(l=10, r=10, t=35, b=10),
-                height=450,
-                template=plotly_template,
-                paper_bgcolor='rgba(0,0,0,0)',
-                plot_bgcolor=plotly_plot_bg,
-                font=dict(family="Nanum Gothic, sans-serif", color=plotly_font_color)
-            )
+    # =============================================
+    # PAGE 3: 💱 국제 환율
+    # =============================================
+    elif selected_page == "💱 국제 환율":
+        st.subheader("💱 환율 · 원자재 · 시장 지표")
+        fx_map = {"USD/KRW": "KRW=X", "EUR/USD": "EURUSD=X", "JPY/KRW": "JPYKRW=X",
+                  "Gold": "GC=F", "WTI 유가": "CL=F", "미 10Y 금리": "^TNX", "BTC/USD": "BTC-USD"}
 
-            fig_fx.update_xaxes(
-                rangeselector=dict(
-                    buttons=list([
-                        dict(count=1, label="1M", step="month", stepmode="backward"),
-                        dict(count=6, label="6M", step="month", stepmode="backward"),
-                        dict(count=1, label="1Y", step="year", stepmode="backward"),
-                        dict(step="all", label="전체 (5년)")
-                    ]),
-                    bgcolor="#282A2D" if is_dark_theme else "#F8FAFC",
-                    activecolor="#79E963",
-                    font=dict(color="#F3F4F6" if is_dark_theme else "#1F2937")
-                )
-            )
-            st.plotly_chart(fig_fx, use_container_width=True)
-
-# =========================================================
-# 📄 PAGE 4: 🗺️ 등락률 트리맵 (Market Sector Treemap)
-# =========================================================
-elif selected_page == "🗺️ 등락률 트리맵":
-    st.subheader("🗺️ 미 증시 전 종목 섹터별 등락률 트리맵 (Market Heatmap)")
-    st.caption("시가총액 크기 및 일일 주가 등락률을 한눈에 시각적으로 탐색합니다.")
-
-    df_tree_raw = load_all_data()
-
-    if not df_tree_raw.empty:
-        t_col1, t_col2 = st.columns([6, 4])
-        with t_col1:
-            selected_sectors = st.multiselect(
-                "필터링 섹터 선택 (전체 보려면 비워두세요)",
-                options=list(df_tree_raw["섹터"].unique()),
-                default=[]
-            )
-        with t_col2:
-            top_n = st.slider("시가총액 상위 종목 수", min_value=50, max_value=len(df_tree_raw), value=300, step=50)
-
-        df_filtered_tree = df_tree_raw.copy()
-        if selected_sectors:
-            df_filtered_tree = df_filtered_tree[df_filtered_tree["섹터"].isin(selected_sectors)]
-            
-        df_filtered_tree = df_filtered_tree.head(top_n)
-
-        fig_tree_full = px.treemap(
-            df_filtered_tree, 
-            path=[px.Constant("미국 주식 시장"), '섹터', 'Ticker'], 
-            values='시가총액(B$)', 
-            color='등락률(%)',        
-            color_continuous_scale='RdYlGn',  
-            hover_data=['종목명', '현재가($)', '등락률(%)', 'PER'], 
-            color_continuous_midpoint=0  
-        )
-        
-        is_dark_theme = (st.session_state.get("theme_mode") == "Dark")
-        plotly_template = "plotly_dark" if is_dark_theme else "plotly_white"
-        plotly_plot_bg = "#282A2D" if is_dark_theme else "#FFFFFF"
-        plotly_font_color = "#F3F4F6" if is_dark_theme else "#1F2937"
-        plotly_root_color = "#383C42" if is_dark_theme else "#E5E7EB"
-
-        fig_tree_full.update_traces(root_color=plotly_root_color)
-        fig_tree_full.update_layout(
-            margin=dict(t=30, l=10, r=10, b=10), 
-            template=plotly_template,
-            paper_bgcolor='rgba(0,0,0,0)',
-            plot_bgcolor=plotly_plot_bg,
-            font=dict(family="Nanum Gothic, sans-serif", color=plotly_font_color),
-            height=700 
-        )
-        st.plotly_chart(fig_tree_full, use_container_width=True)
-
-# =========================================================
-# 📄 PAGE 5: 💬 AI 금융 챗봇 (AI Financial Chatbot)
-# =========================================================
-elif selected_page == "💬 AI 금융 챗봇":
-    st.subheader("💬 아보미 AI 금융 챗봇")
-    st.caption("Gemini 1.5 Flash 기반의 AI 애널리스트와 미국 주식, 재무 지표, 투자 전략에 대해 실시간으로 대화해 보세요.")
-
-    import google.generativeai as genai
-    from dotenv import load_dotenv
-
-    load_dotenv()
-    api_key = os.getenv("GEMINI_API_KEY") or os.getenv("gemini_api_key")
-
-    if not api_key or api_key == "여기에_내API_키_입력":
-        st.warning("⚠️ `.env` 파일에 올바른 `GEMINI_API_KEY`를 설정해 주시면 AI 챗봇을 바로 이용하실 수 있습니다.")
-
-    # 대화 기록 초기화
-    if "chat_messages" not in st.session_state:
-        st.session_state["chat_messages"] = [
-            {"role": "assistant", "content": "안녕하세요! 아보미 AI 금융 애널리스트입니다. 궁금하신 주식 종목, 재무 지표, 시장 동향에 대해 편하게 질문해 주세요! 🚀"}
-        ]
-
-    # 기존 대화 기록 화면 출력
-    for msg in st.session_state["chat_messages"]:
-        with st.chat_message(msg["role"]):
-            st.write(msg["content"])
-
-    # 사용자 입력 처리
-    if user_input := st.chat_input("예: NVDA와 AMD 중 어떤 종목의 실적이 좋아? 또는 PER이 뭐야?"):
-        # 사용자 메시지 저장 및 출력
-        st.session_state["chat_messages"].append({"role": "user", "content": user_input})
-        with st.chat_message("user"):
-            st.write(user_input)
-
-        if api_key and api_key != "여기에_내API_키_입력":
-            with st.chat_message("assistant"):
-                with st.spinner("AI 애널리스트가 질문을 분석하여 답변 중입니다..."):
+        @st.cache_data(ttl=30)
+        def fetch_fx_data():
+            records = []
+            try:
+                data = yf.Tickers(' '.join(fx_map.values()))
+                for name, sym in fx_map.items():
                     try:
-                        genai.configure(api_key=api_key)
-                        # 3.6-flash 모델 적용 (최신 모델 호환)
-                        model_name = "gemini-3.6-flash"
-                        try:
-                            model = genai.GenerativeModel(
-                                model_name,
-                                system_instruction="너는 미국 주식 및 금융 데이터 전문 AI 애널리스트 '아보미 AI'야. 친절하고 명확하게 한국어로 전문적인 주식 정보와 재무 해석을 제공해 줘."
-                            )
-                        except Exception:
-                            model = genai.GenerativeModel(
-                                "gemini-1.5-flash",
-                                system_instruction="너는 미국 주식 및 금융 데이터 전문 AI 애널리스트 '아보미 AI'야. 친절하고 명확하게 한국어로 전문적인 주식 정보와 재무 해석을 제공해 줘."
-                            )
+                        h = data.tickers[sym].history(period='5d')
+                        if not h.empty:
+                            cp = float(h['Close'].iloc[-1])
+                            prev = float(h['Close'].iloc[-2]) if len(h) > 1 else cp
+                            chg = round(((cp - prev) / prev) * 100, 2)
+                            records.append({"Symbol": sym, "지표명": name, "현재가": cp, "전일대비(%)": chg})
+                    except Exception: pass
+            except Exception: pass
+            return pd.DataFrame(records)
 
-                        # 대화 히스토리 전달
-                        history = []
-                        for m in st.session_state["chat_messages"][:-1]:
-                            history.append({
-                                "role": "user" if m["role"] == "user" else "model",
-                                "parts": [m["content"]]
-                            })
+        df_fx = fetch_fx_data()
+        if not df_fx.empty:
+            cols = st.columns(4)
+            fx_context_parts = []
+            for idx, row in df_fx.iterrows():
+                symbol = row["Symbol"]
+                if symbol == "KRW=X": val_str = f"₩{row['현재가']:,.2f}"
+                elif symbol == "^TNX": val_str = f"{row['현재가']:.2f}%"
+                elif symbol == "BTC-USD": val_str = f"${row['현재가']:,.0f}"
+                else: val_str = f"${row['현재가']:,.2f}"
+                with cols[idx % 4]: st.metric(row["지표명"], val_str, f"{row['전일대비(%)']:+.2f}%")
+                fx_context_parts.append(f"{row['지표명']}: {val_str} ({row['전일대비(%)']:+.2f}%)")
 
-                        chat = model.start_chat(history=history)
-                        response = chat.send_message(user_input)
-                        ai_reply = response.text
+            ai_context = "환율/원자재 실시간 시세:\n" + "\n".join(fx_context_parts)
 
-                        st.write(ai_reply)
-                        st.session_state["chat_messages"].append({"role": "assistant", "content": ai_reply})
-                    except Exception as e:
-                        err_msg = f"❌ AI 답변 생성 중 오류가 발생했습니다: {e}"
-                        st.error(err_msg)
-                        st.session_state["chat_messages"].append({"role": "assistant", "content": err_msg})
+        st.markdown("---")
+        fx_choice = st.selectbox("상세 차트", list(fx_map.keys()), index=0)
+        chosen_sym = fx_map[fx_choice]
+        with st.spinner(f"{fx_choice} 로딩 중..."):
+            fx_chart_data = yf.Ticker(chosen_sym).history(period="5y")
+            if not fx_chart_data.empty:
+                fig_fx = go.Figure()
+                fig_fx.add_trace(go.Scatter(x=fx_chart_data.index, y=fx_chart_data['Close'], mode='lines', name=fx_choice, line=dict(color='#10B981', width=2)))
+                is_dark = st.session_state.get("theme_mode") == "Dark"
+                fig_fx.update_layout(title=f"{fx_choice} 5년 추이", yaxis_title="Price / Rate",
+                    margin=dict(l=10, r=10, t=35, b=10), height=420,
+                    template="plotly_dark" if is_dark else "plotly_white", paper_bgcolor='rgba(0,0,0,0)',
+                    plot_bgcolor="#1F2937" if is_dark else "#FFFFFF",
+                    font=dict(family="Noto Sans KR, sans-serif", color="#F9FAFB" if is_dark else "#111827"))
+                fig_fx.update_xaxes(rangeselector=dict(
+                    buttons=[dict(count=1,label="1M",step="month",stepmode="backward"),
+                             dict(count=6,label="6M",step="month",stepmode="backward"),
+                             dict(count=1,label="1Y",step="year",stepmode="backward"),
+                             dict(step="all",label="전체")],
+                    bgcolor="#1F2937" if is_dark else "#F9FAFB", activecolor="#10B981",
+                    font=dict(color="#F9FAFB" if is_dark else "#111827")))
+                st.plotly_chart(fig_fx, use_container_width=True)
+        context_label = "📍 환율·원자재 조회 중"
+
+    # =============================================
+    # PAGE 4: 🗺️ 등락률 트리맵
+    # =============================================
+    elif selected_page == "🗺️ 등락률 트리맵":
+        st.subheader("🗺️ 섹터별 등락률 히트맵")
+        df_tree_raw = load_all_data()
+        if not df_tree_raw.empty:
+            tc1, tc2 = st.columns([6, 4])
+            with tc1:
+                selected_sectors = st.multiselect("섹터 필터", options=list(df_tree_raw["섹터"].unique()), default=[])
+            with tc2:
+                top_n = st.slider("상위 종목 수", 50, len(df_tree_raw), 300, step=50)
+            df_ft = df_tree_raw.copy()
+            if selected_sectors: df_ft = df_ft[df_ft["섹터"].isin(selected_sectors)]
+            df_ft = df_ft.head(top_n)
+            fig_tree = px.treemap(df_ft, path=[px.Constant("미국 주식 시장"), '섹터', 'Ticker'],
+                values='시가총액(B$)', color='등락률(%)', color_continuous_scale='RdYlGn',
+                hover_data=['종목명', '현재가($)', '등락률(%)', 'PER'], color_continuous_midpoint=0)
+            is_dark = st.session_state.get("theme_mode") == "Dark"
+            fig_tree.update_traces(root_color="#374151" if is_dark else "#E5E7EB")
+            fig_tree.update_layout(margin=dict(t=30, l=10, r=10, b=10),
+                template="plotly_dark" if is_dark else "plotly_white", paper_bgcolor='rgba(0,0,0,0)',
+                font=dict(family="Noto Sans KR, sans-serif", color="#F9FAFB" if is_dark else "#111827"), height=620)
+            st.plotly_chart(fig_tree, use_container_width=True)
+
+            # 상승/하락 TOP 5 컨텍스트
+            top5_up = df_tree_raw.nlargest(5, "등락률(%)")
+            top5_down = df_tree_raw.nsmallest(5, "등락률(%)")
+            ai_context = "오늘 시장 요약:\n상승 TOP 5: " + ", ".join([f"{r['Ticker']}({r['등락률(%)']:+.2f}%)" for _, r in top5_up.iterrows()])
+            ai_context += "\n하락 TOP 5: " + ", ".join([f"{r['Ticker']}({r['등락률(%)']:+.2f}%)" for _, r in top5_down.iterrows()])
+        context_label = "📍 시장 히트맵"
+
+# ═══════════════════════════════════════════════════
+# 우측 AI 챗봇 패널 (모든 페이지에서 상시 표시)
+# ═══════════════════════════════════════════════════
+with chat_col:
+    st.markdown("**💬 AI 어시스턴트**")
+    if context_label:
+        st.caption(context_label)
+
+    if not GEMINI_API_KEY or GEMINI_API_KEY == "여기에_내API_키_입력":
+        st.caption("⚠️ `.env`에 API 키를 설정하면 AI를 사용할 수 있습니다.")
+
+    # 대화 영역 (스크롤 가능 고정 높이)
+    chat_box = st.container(height=480)
+    with chat_box:
+        for msg in st.session_state["chat_messages"]:
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
+
+    # 입력
+    if prompt := st.chat_input("질문하세요..."):
+        st.session_state["chat_messages"].append({"role": "user", "content": prompt})
+        with chat_box:
+            with st.chat_message("user"):
+                st.markdown(prompt)
+            with st.chat_message("assistant"):
+                with st.spinner("답변 생성 중..."):
+                    reply = get_ai_response(ai_context, prompt, st.session_state["chat_messages"][:-1])
+                    st.markdown(reply)
+        st.session_state["chat_messages"].append({"role": "assistant", "content": reply})

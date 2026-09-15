@@ -1,0 +1,31 @@
+=== ABOMI FONT DIAGNOSTIC ===
+[Browser] Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/137.0.0.0 Safari/537.36
+[Lang] ko-KR | ko-KR,ko,en-US,en
+[DPR] 1
+
+[Font Loading]
+Loaded: Source Code Pro w100 900 -> loaded, Material Symbols Rounded w400 -> loaded, Noto Sans KR w400 -> loaded, Noto Sans KR w700 -> loaded, Noto Sans KR w400 -> loaded, Noto Sans KR w700 -> loaded
+Failed: KaTeX_AMS w400 -> unloaded, KaTeX_Caligraphic w700 -> unloaded, KaTeX_Caligraphic w400 -> unloaded, KaTeX_Fraktur w700 -> unloaded, KaTeX_Fraktur w400 -> unloaded, KaTeX_Main w700 -> unloaded, KaTeX_Main w700 -> unloaded, KaTeX_Main w400 -> unloaded, KaTeX_Main w400 -> unloaded, KaTeX_Math w700 -> unloaded, KaTeX_Math w400 -> unloaded, KaTeX_SansSerif w700 -> unloaded, KaTeX_SansSerif w400 -> unloaded, KaTeX_SansSerif w400 -> unloaded, KaTeX_Script w400 -> unloaded, KaTeX_Size1 w400 -> unloaded, KaTeX_Size2 w400 -> unloaded, KaTeX_Size3 w400 -> unloaded, KaTeX_Size4 w400 -> unloaded, KaTeX_Typewriter w400 -> unloaded, Source Code Pro w100 900 -> unloaded, Source Sans w100 900 -> unloaded, Source Sans w100 900 -> unloaded, Source Serif w100 900 -> unloaded, Source Serif w100 900 -> unloaded
+
+[Computed Styles]
+body font-family: "Noto Sans KR", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif
+body font-size: 16px
+
+[CSS Analysis]
+Style tags: 6
+@font-face: 2
+
+[Font Availability]
+  Noto Sans KR: width=202.4 avail=YES
+  Malgun Gothic: width=220.0 avail=no
+  Apple SD Gothic Neo: width=220.0 avail=no
+  NanumGothic: width=206.8 avail=YES
+  Gulim: width=220.0 avail=no
+  sans-serif: width=220.0 avail=no
+  serif: width=220.0 avail=no
+
+[Document]
+lang: en
+charset: UTF-8
+
+=== END ===
