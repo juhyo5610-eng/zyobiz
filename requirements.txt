@@ -4,3 +4,5 @@ pandas
 plotly
 requests
 pillow
+python-dotenv
+google-generativeai
