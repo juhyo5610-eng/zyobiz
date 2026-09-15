@@ -211,6 +211,30 @@ h1, h2, h3, h4, h5, h6, label, p {{
     background-color: var(--bg-card); border: 1px solid var(--border-color);
     border-radius: 12px; padding: 12px 16px;
 }}
+
+/* 섹터 카드 */
+.sector-card {{
+    background: var(--bg-card); border: 1px solid var(--border-color);
+    border-radius: 12px; padding: 14px 16px; text-align: center;
+    transition: border-color 0.15s; cursor: pointer;
+}}
+.sector-card:hover {{ border-color: #10B981; }}
+.sector-card .sector-name {{ font-size: 14px; font-weight: 700; margin-bottom: 4px; color: var(--text-main); }}
+.sector-card .sector-etf {{ font-size: 12px; color: var(--text-sub); }}
+.sector-card .sector-chg {{ font-size: 15px; font-weight: 700; margin: 4px 0; }}
+.sector-card .sector-count {{ font-size: 11px; color: var(--text-sub); }}
+.chg-up {{ color: #EF4444; }}
+.chg-down {{ color: #3B82F6; }}
+.chg-flat {{ color: var(--text-sub); }}
+
+/* 섹터 선택 바 */
+.sector-etf-bar {{
+    background: var(--bg-card); border: 1px solid var(--border-color);
+    border-radius: 12px; padding: 12px 20px; margin-bottom: 8px;
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+}}
+.sector-etf-bar .etf-name {{ font-weight: 700; font-size: 15px; color: var(--text-main); }}
+.sector-etf-bar .etf-detail {{ font-size: 13px; color: var(--text-sub); }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -219,6 +243,8 @@ candidate_tickers = [
     "TQQQ", "SOXL", "NVDL", "CONL", "SQQQ", "FNGU", "SPXL", "TSLL", "LABU", "UPRO",
     "MSTX", "MSTU", "SOXS", "TECL", "WEBL", "DPST", "FAS", "FAZ", "TNA", "TZA",
     "SPY", "QQQ", "IWM", "DIA", "VOO", "IVV", "GLD", "SLV", "SCHD", "JEPI",
+    # 섹터별 대표 ETF
+    "XLK", "XLV", "XLF", "XLY", "XLP", "XLC", "XLI", "XLE", "XLB", "XLRE", "XLU",
     "NVDA", "TSLA", "AAPL", "MSFT", "AMZN", "GOOGL", "GOOG", "META", "AMD", "INTC",
     "PLTR", "SMCI", "COIN", "MSTR", "HOOD", "ROKU", "DKNG", "ARM", "AVGO", "QCOM",
     "MARA", "RIOT", "CLSK", "ASTS", "RKLB", "LUNR", "IONQ", "RIVN", "LCID", "NIO",
@@ -231,7 +257,8 @@ candidate_tickers = [
 known_etfs = set([
     "TQQQ", "SOXL", "NVDL", "CONL", "SQQQ", "FNGU", "SPXL", "TSLL", "LABU", "UPRO",
     "MSTX", "MSTU", "SOXS", "TECL", "WEBL", "DPST", "FAS", "FAZ", "TNA", "TZA",
-    "SPY", "QQQ", "IWM", "DIA", "VOO", "IVV", "GLD", "SLV", "SCHD", "JEPI", "JEPQ"
+    "SPY", "QQQ", "IWM", "DIA", "VOO", "IVV", "GLD", "SLV", "SCHD", "JEPI", "JEPQ",
+    "XLK", "XLV", "XLF", "XLY", "XLP", "XLC", "XLI", "XLE", "XLB", "XLRE", "XLU"
 ])
 
 SECTOR_MAP = {
@@ -240,6 +267,23 @@ SECTOR_MAP = {
     'AMZN': 'Consumer Cyclical', 'TSLA': 'Consumer Cyclical', 'GOOGL': 'Communication Services',
     'META': 'Communication Services', 'JPM': 'Financial Services', 'BAC': 'Financial Services',
     'LLY': 'Healthcare', 'UNH': 'Healthcare', 'WMT': 'Consumer Defensive', 'XOM': 'Energy'
+}
+
+# === 섹터 정보 (한글명 + 대표 ETF + 아이콘) ===
+SECTOR_INFO = {
+    "Technology":             {"kr": "🖥️ 기술",       "etf": "XLK"},
+    "Healthcare":             {"kr": "🏥 헬스케어",    "etf": "XLV"},
+    "Financial Services":     {"kr": "🏦 금융",       "etf": "XLF"},
+    "Consumer Cyclical":      {"kr": "🛒 경기소비재",  "etf": "XLY"},
+    "Consumer Defensive":     {"kr": "🛡️ 필수소비재", "etf": "XLP"},
+    "Communication Services": {"kr": "📡 커뮤니케이션", "etf": "XLC"},
+    "Industrials":            {"kr": "🏭 산업재",      "etf": "XLI"},
+    "Energy":                 {"kr": "⛽ 에너지",      "etf": "XLE"},
+    "Materials":              {"kr": "🧱 소재",        "etf": "XLB"},
+    "Real Estate":            {"kr": "🏠 부동산",      "etf": "XLRE"},
+    "Utilities":              {"kr": "💡 유틸리티",    "etf": "XLU"},
+    "ETF":                    {"kr": "📦 ETF",         "etf": "SPY"},
+    "기타":                   {"kr": "🔷 기타",        "etf": None},
 }
 
 @st.cache_data(ttl=30)
@@ -375,36 +419,100 @@ with main_col:
     if selected_page == "📊 실시간 주가":
         df = load_all_data()
 
-        # --- 필터 + 정렬 (나란히 배치) ---
+        # --- 세션: 선택된 섹터 ---
+        if "selected_sector" not in st.session_state:
+            st.session_state["selected_sector"] = "전체"
+
+        # === 섹터 개요 카드 (항상 표시) ===
+        # 섹터별 종목 수 + ETF 등락률 계산
+        sector_stats = {}
+        for sec_name, sec_info in SECTOR_INFO.items():
+            sec_df = df[df["섹터"] == sec_name] if sec_name != "전체" else df
+            count = len(sec_df)
+            if count == 0 and sec_name not in ["ETF", "기타"]:
+                continue
+            etf_ticker = sec_info["etf"]
+            etf_chg = 0.0
+            etf_price = 0.0
+            if etf_ticker and not df.empty:
+                etf_row = df[df["Ticker"] == etf_ticker]
+                if not etf_row.empty:
+                    etf_chg = float(etf_row.iloc[0]["등락률(%)"])
+                    etf_price = float(etf_row.iloc[0]["현재가($)"])
+            sector_stats[sec_name] = {"count": count, "chg": etf_chg, "price": etf_price, "etf": etf_ticker, "kr": sec_info["kr"]}
+
+        # 섹터 카드 그리드 (2행 × 6열)
+        visible_sectors = [s for s in sector_stats if sector_stats[s]["count"] > 0]
+        row_size = 6
+        for row_start in range(0, len(visible_sectors), row_size):
+            row_sectors = visible_sectors[row_start:row_start + row_size]
+            cols = st.columns(len(row_sectors))
+            for i, sec_name in enumerate(row_sectors):
+                s = sector_stats[sec_name]
+                chg_class = "chg-up" if s["chg"] > 0 else ("chg-down" if s["chg"] < 0 else "chg-flat")
+                chg_sign = "+" if s["chg"] > 0 else ""
+                etf_label = s["etf"] if s["etf"] else "-"
+                with cols[i]:
+                    if st.button(f"{s['kr']}\n{etf_label} {chg_sign}{s['chg']:.2f}%\n{s['count']}개", key=f"sec_{sec_name}", use_container_width=True):
+                        st.session_state["selected_sector"] = sec_name
+                        st.rerun()
+
+        # --- 전체 보기 버튼 ---
+        bc1, bc2, bc3 = st.columns([2, 1, 2])
+        with bc2:
+            if st.button("🔄 전체 보기" if st.session_state["selected_sector"] != "전체" else "✅ 전체 보기 중", use_container_width=True, disabled=(st.session_state["selected_sector"] == "전체")):
+                st.session_state["selected_sector"] = "전체"
+                st.rerun()
+
+        current_sector = st.session_state["selected_sector"]
+
+        # === 선택된 섹터 ETF 정보 바 ===
+        if current_sector != "전체" and current_sector in SECTOR_INFO:
+            sinfo = SECTOR_INFO[current_sector]
+            etf_t = sinfo["etf"]
+            if etf_t and not df.empty:
+                etf_match = df[df["Ticker"] == etf_t]
+                if not etf_match.empty:
+                    ep = float(etf_match.iloc[0]["현재가($)"])
+                    ec = float(etf_match.iloc[0]["등락률(%)"])
+                    chg_cls = "chg-up" if ec > 0 else ("chg-down" if ec < 0 else "chg-flat")
+                    chg_s = "+" if ec > 0 else ""
+                    sec_count = len(df[df["섹터"] == current_sector])
+                    avg_chg = df[df["섹터"] == current_sector]["등락률(%)"].mean()
+                    avg_cls = "chg-up" if avg_chg > 0 else ("chg-down" if avg_chg < 0 else "chg-flat")
+                    avg_s = "+" if avg_chg > 0 else ""
+                    st.markdown(f"""
+                    <div class="sector-etf-bar">
+                        <span class="etf-name">{sinfo['kr']}</span>
+                        <span class="etf-detail">대표 ETF: <b>{etf_t}</b> ${ep:.2f} <span class="{chg_cls}">({chg_s}{ec:.2f}%)</span></span>
+                        <span class="etf-detail">{sec_count}개 종목 · 평균 <span class="{avg_cls}">{avg_s}{avg_chg:.2f}%</span></span>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+        st.markdown("---")
+
+        # === 섹터 필터 적용 ===
+        if current_sector == "전체":
+            sector_df = df.copy()
+        else:
+            sector_df = df[df["섹터"] == current_sector].copy()
+
+        # --- 필터 + 정렬 ---
         filter_zone, sort_zone = st.columns([7, 3])
 
         with filter_zone:
-            with st.expander("🔍 필터 조건", expanded=False):
-                # 섹터 필터
-                if not df.empty:
-                    all_sectors = sorted(df["섹터"].dropna().unique().tolist())
-                    sel_sectors = st.multiselect("섹터", all_sectors, default=[], placeholder="전체 섹터")
-                else:
-                    sel_sectors = []
-
-                # 수치 필터 Row 1
+            with st.expander("🔍 상세 필터", expanded=False):
                 f1, f2, f3 = st.columns(3)
                 with f1:
-                    max_cap_val = float(df["시가총액(B$)"].max()) if not df.empty else 5000.0
+                    max_cap_val = float(sector_df["시가총액(B$)"].max()) if not sector_df.empty else 5000.0
                     min_cap, max_cap = st.slider("시가총액 (B$)", 0.0, max_cap_val, (0.0, max_cap_val), step=10.0)
+                    max_per = st.number_input("최대 PER (0=무시)", min_value=0, value=0)
                 with f2:
-                    max_price_val = float(df["현재가($)"].max()) if not df.empty else 2000.0
+                    max_price_val = float(sector_df["현재가($)"].max()) if not sector_df.empty else 2000.0
                     min_price, max_price = st.slider("주가 ($)", 0.0, max_price_val, (0.0, max_price_val))
+                    max_pbr = st.number_input("최대 PBR (0=무시)", min_value=0.0, value=0.0, step=0.5)
                 with f3:
                     min_volume = st.number_input("최소 거래량", min_value=0, value=0, step=100000)
-
-                # 수치 필터 Row 2
-                f4, f5, f6 = st.columns(3)
-                with f4:
-                    max_per = st.number_input("최대 PER (0=무시)", min_value=0, value=0)
-                with f5:
-                    max_pbr = st.number_input("최대 PBR (0=무시)", min_value=0.0, value=0.0, step=0.5)
-                with f6:
                     min_dividend = st.number_input("최소 배당률 (%)", min_value=0.0, value=0.0, step=0.1)
 
         with sort_zone:
@@ -417,21 +525,19 @@ with main_col:
             st.markdown('</div>', unsafe_allow_html=True)
 
         # --- 필터 적용 ---
-        filtered_df = df.copy()
+        filtered_df = sector_df.copy()
         if not filtered_df.empty:
             filtered_df = filtered_df[
                 (filtered_df["시가총액(B$)"] >= min_cap) & (filtered_df["시가총액(B$)"] <= max_cap) &
                 (filtered_df["현재가($)"] >= min_price) & (filtered_df["현재가($)"] <= max_price) &
                 (filtered_df["거래량"] >= min_volume) & (filtered_df["배당수익률(%)"] >= min_dividend)
             ]
-            if sel_sectors:
-                filtered_df = filtered_df[filtered_df["섹터"].isin(sel_sectors)]
             if max_per > 0:
                 filtered_df = filtered_df[(filtered_df["PER"] > 0) & (filtered_df["PER"] <= max_per)]
             if max_pbr > 0:
                 filtered_df = filtered_df[(filtered_df["PBR"] > 0) & (filtered_df["PBR"] <= max_pbr)]
 
-        # --- 정렬 적용 ---
+        # --- 정렬 ---
         if sort_option == "거래량 많은순":
             filtered_df = filtered_df.sort_values(by="거래량", ascending=False)
         elif sort_option == "시가총액 높은순":
@@ -441,21 +547,22 @@ with main_col:
         elif sort_option == "하락률 높은순":
             filtered_df = filtered_df.sort_values(by="등락률(%)", ascending=True)
         elif sort_option == "PER 낮은순":
-            per_valid = filtered_df[filtered_df["PER"] > 0]
-            per_zero = filtered_df[filtered_df["PER"] <= 0]
-            filtered_df = pd.concat([per_valid.sort_values(by="PER", ascending=True), per_zero])
+            pv = filtered_df[filtered_df["PER"] > 0]
+            pz = filtered_df[filtered_df["PER"] <= 0]
+            filtered_df = pd.concat([pv.sort_values(by="PER", ascending=True), pz])
         elif sort_option == "배당률 높은순":
             filtered_df = filtered_df.sort_values(by="배당수익률(%)", ascending=False)
         elif sort_option == "이름순 (A-Z)":
             filtered_df = filtered_df.sort_values(by="종목명", ascending=True)
 
-        # --- 결과 표시 ---
-        is_filtered = len(filtered_df) < len(df)
-        if is_filtered:
-            st.caption(f"필터 적용 · **{len(filtered_df):,}**개 종목")
+        # --- 결과 카운트 ---
+        sector_label = SECTOR_INFO.get(current_sector, {}).get("kr", "전체") if current_sector != "전체" else "전체"
+        if len(filtered_df) < len(sector_df):
+            st.caption(f"{sector_label} · 필터 적용 **{len(filtered_df):,}**개")
         else:
-            st.caption(f"전체 **{len(df):,}**개 종목")
+            st.caption(f"{sector_label} · **{len(filtered_df):,}**개 종목")
 
+        # --- 테이블 + 차트 ---
         table_sub, chart_sub = st.columns([6, 4])
 
         with table_sub:
@@ -465,7 +572,7 @@ with main_col:
                     "등락률(%)": "{:.2f}%", "거래량": "{:,.0f}"
                 }),
                 use_container_width=True, hide_index=True,
-                on_select="rerun", selection_mode="single-row", height=560
+                on_select="rerun", selection_mode="single-row", height=500
             )
 
         with chart_sub:
@@ -514,12 +621,12 @@ with main_col:
                     ))
                     st.plotly_chart(fig, use_container_width=True)
 
-                # AI 컨텍스트 설정
+                # AI 컨텍스트
                 ai_context = f"종목: {sel_ticker} ({row_data['종목명']})\n현재가: ${row_data['현재가($)']:.2f} ({row_data['등락률(%)']:+.2f}%)\n시총: ${row_data['시가총액(B$)']:.2f}B | PER: {row_data['PER']} | PBR: {row_data['PBR']}\n배당: {row_data['배당수익률(%)']}% | 거래량: {row_data['거래량']:,}\n섹터: {row_data['섹터']}"
                 context_label = f"📍 {sel_ticker} 조회 중"
             else:
                 st.info("👈 종목을 선택하면 차트가 표시됩니다.")
-                context_label = "📍 실시간 시세"
+                context_label = f"📍 {sector_label}"
 
     # =============================================
     # PAGE 2: 💼 내 보유 주식
