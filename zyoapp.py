@@ -212,17 +212,32 @@ h1, h2, h3, h4, h5, h6, label, p {{
     border-radius: 12px; padding: 12px 16px;
 }}
 
-/* 섹터 카드 */
-.sector-card {{
+/* === 섹터 리스트 스타일 === */
+.sector-list-group {{
     background: var(--bg-card); border: 1px solid var(--border-color);
-    border-radius: 12px; padding: 14px 16px; text-align: center;
-    transition: border-color 0.15s; cursor: pointer;
+    border-radius: 12px; margin-bottom: 10px; overflow: hidden;
 }}
-.sector-card:hover {{ border-color: #10B981; }}
-.sector-card .sector-name {{ font-size: 14px; font-weight: 700; margin-bottom: 4px; color: var(--text-main); }}
-.sector-card .sector-etf {{ font-size: 12px; color: var(--text-sub); }}
-.sector-card .sector-chg {{ font-size: 15px; font-weight: 700; margin: 4px 0; }}
-.sector-card .sector-count {{ font-size: 11px; color: var(--text-sub); }}
+.sector-list-header {{
+    font-size: 12px; font-weight: 700; color: var(--text-sub);
+    letter-spacing: 0.3px; padding: 10px 16px 6px 16px;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--bg-metric);
+}}
+.sector-list-row {{
+    display: grid; grid-template-columns: 32px 1fr 70px 60px 50px;
+    align-items: center; gap: 4px;
+    padding: 9px 16px; border-bottom: 1px solid var(--border-color);
+    cursor: pointer; transition: background 0.15s;
+    font-family: 'Noto Sans KR', sans-serif;
+}}
+.sector-list-row:last-child {{ border-bottom: none; }}
+.sector-list-row:hover {{ background: rgba(16, 185, 129, 0.04); }}
+.sector-list-row.active {{ background: rgba(16, 185, 129, 0.08); border-left: 3px solid #10B981; padding-left: 13px; }}
+.sector-list-row .sl-icon {{ font-size: 18px; text-align: center; }}
+.sector-list-row .sl-name {{ font-size: 13px; font-weight: 600; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
+.sector-list-row .sl-etf {{ font-size: 11px; color: var(--text-sub); text-align: center; font-family: 'SF Mono', 'Consolas', monospace; }}
+.sector-list-row .sl-chg {{ font-size: 12px; font-weight: 700; text-align: right; }}
+.sector-list-row .sl-count {{ font-size: 11px; color: var(--text-sub); text-align: right; }}
 .chg-up {{ color: #EF4444; }}
 .chg-down {{ color: #3B82F6; }}
 .chg-flat {{ color: var(--text-sub); }}
@@ -238,67 +253,149 @@ h1, h2, h3, h4, h5, h6, label, p {{
 </style>
 """, unsafe_allow_html=True)
 
-# === 데이터셋 ===
-candidate_tickers = [
-    "TQQQ", "SOXL", "NVDL", "CONL", "SQQQ", "FNGU", "SPXL", "TSLL", "LABU", "UPRO",
-    "MSTX", "MSTU", "SOXS", "TECL", "WEBL", "DPST", "FAS", "FAZ", "TNA", "TZA",
-    "SPY", "QQQ", "IWM", "DIA", "VOO", "IVV", "GLD", "SLV", "SCHD", "JEPI",
-    # 섹터별 대표 ETF
-    "XLK", "XLV", "XLF", "XLY", "XLP", "XLC", "XLI", "XLE", "XLB", "XLRE", "XLU",
-    "NVDA", "TSLA", "AAPL", "MSFT", "AMZN", "GOOGL", "GOOG", "META", "AMD", "INTC",
-    "PLTR", "SMCI", "COIN", "MSTR", "HOOD", "ROKU", "DKNG", "ARM", "AVGO", "QCOM",
-    "MARA", "RIOT", "CLSK", "ASTS", "RKLB", "LUNR", "IONQ", "RIVN", "LCID", "NIO",
-    "PYPL", "SQ", "SHOP", "SE", "BABA", "PDD", "UBER", "LYFT", "CRWD", "PANW",
-    "LLY", "UNH", "JNJ", "PFE", "ABBV", "MRK", "AMGN", "HIMS", "MRNA", "GILD",
-    "JPM", "BAC", "WFC", "C", "GS", "MS", "BLK", "SCHW", "AXP", "V", "MA",
-    "CAT", "DE", "BA", "LMT", "RTX", "GE", "HON", "XOM", "CVX", "WMT", "COST"
-]
+# ═══════════════════════════════════════════════════════════════
+# === 데이터셋: 세분화된 섹터 + 확대된 대표 종목 ===
+# ═══════════════════════════════════════════════════════════════
 
-known_etfs = set([
-    "TQQQ", "SOXL", "NVDL", "CONL", "SQQQ", "FNGU", "SPXL", "TSLL", "LABU", "UPRO",
-    "MSTX", "MSTU", "SOXS", "TECL", "WEBL", "DPST", "FAS", "FAZ", "TNA", "TZA",
-    "SPY", "QQQ", "IWM", "DIA", "VOO", "IVV", "GLD", "SLV", "SCHD", "JEPI", "JEPQ",
-    "XLK", "XLV", "XLF", "XLY", "XLP", "XLC", "XLI", "XLE", "XLB", "XLRE", "XLU"
-])
+# 섹터별 대표 종목 (세분화 섹터 → 티커 리스트)
+SECTOR_TICKERS = {
+    # ── 기술 (Technology) ──
+    "반도체": ["NVDA", "AMD", "INTC", "AVGO", "QCOM", "MU", "MRVL", "LRCX", "KLAC", "AMAT", "TSM", "ON", "NXPI", "TXN", "ADI", "SMCI"],
+    "소프트웨어": ["MSFT", "ORCL", "CRM", "ADBE", "NOW", "INTU", "SNPS", "CDNS", "WDAY", "TEAM", "DDOG", "ZS", "HUBS", "MNDY", "PLTR", "SNOW"],
+    "클라우드·인터넷": ["AMZN", "GOOGL", "GOOG", "SHOP", "NET", "DDOG", "MDB", "ESTC", "CFLT", "PATH"],
+    "사이버보안": ["CRWD", "PANW", "ZS", "FTNT", "S", "CYBR", "OKTA"],
+    "AI·로보틱스": ["PLTR", "AI", "UPST", "BBAI", "IONQ", "RGTI", "QUBT", "SMCI", "ARM"],
 
-SECTOR_MAP = {
-    'NVDA': 'Technology', 'AAPL': 'Technology', 'MSFT': 'Technology', 'AMD': 'Technology',
-    'INTC': 'Technology', 'PLTR': 'Technology', 'SMCI': 'Technology', 'AVGO': 'Technology',
-    'AMZN': 'Consumer Cyclical', 'TSLA': 'Consumer Cyclical', 'GOOGL': 'Communication Services',
-    'META': 'Communication Services', 'JPM': 'Financial Services', 'BAC': 'Financial Services',
-    'LLY': 'Healthcare', 'UNH': 'Healthcare', 'WMT': 'Consumer Defensive', 'XOM': 'Energy'
+    # ── 커뮤니케이션 ──
+    "소셜·미디어": ["META", "SNAP", "PINS", "RDDT", "ROKU", "SPOT", "DIS", "NFLX", "WBD", "PARA"],
+    "통신": ["T", "VZ", "TMUS", "LUMN"],
+
+    # ── 헬스케어 (Healthcare) ──
+    "제약": ["LLY", "JNJ", "MRK", "ABBV", "PFE", "BMY", "AZN", "NVO", "AMGN", "GILD", "REGN", "VRTX"],
+    "바이오텍": ["MRNA", "BNTX", "BIIB", "SGEN", "ALNY", "BMRN", "EXEL", "SAVA", "HIMS", "CRSP"],
+    "의료기기": ["ABT", "MDT", "SYK", "ISRG", "BSX", "EW", "DXCM", "ALGN"],
+
+    # ── 금융 (Financial) ──
+    "대형 은행": ["JPM", "BAC", "WFC", "C", "GS", "MS", "USB", "PNC", "TFC", "SCHW"],
+    "핀테크·결제": ["V", "MA", "PYPL", "SQ", "AXP", "FIS", "FISV", "COIN", "HOOD", "SOFI", "AFRM", "NU"],
+    "자산운용·보험": ["BLK", "BX", "KKR", "APO", "ARES", "BRK-B", "AIG", "MET", "PRU", "ALL"],
+
+    # ── 소비 (Consumer) ──
+    "전기차·자율주행": ["TSLA", "RIVN", "LCID", "NIO", "LI", "XPEV", "GM", "F", "TM", "PSNY"],
+    "유통·이커머스": ["WMT", "COST", "TGT", "AMZN", "HD", "LOW", "TJX", "ROST", "DG", "DLTR"],
+    "외식·레저": ["MCD", "SBUX", "CMG", "DKNG", "MGM", "WYNN", "LVS", "MAR", "HLT", "ABNB"],
+    "명품·의류": ["NKE", "LULU", "TPR", "RL", "CPRI", "DECK", "CROX", "VFC", "HBI"],
+
+    # ── 산업재·에너지·원자재 ──
+    "방위·항공": ["LMT", "RTX", "BA", "GD", "NOC", "HII", "TDG", "HWM", "RKLB", "LUNR", "ASTS"],
+    "산업재": ["CAT", "DE", "GE", "HON", "MMM", "UPS", "FDX", "WM", "RSG", "ETN", "EMR", "ROK"],
+    "에너지": ["XOM", "CVX", "COP", "SLB", "EOG", "MPC", "PSX", "VLO", "OXY", "DVN", "HAL", "FANG"],
+    "소재·화학": ["LIN", "APD", "SHW", "ECL", "DD", "DOW", "NEM", "FCX", "GOLD", "AA"],
+
+    # ── 부동산·유틸리티 ──
+    "리츠·부동산": ["AMT", "PLD", "CCI", "EQIX", "SPG", "O", "DLR", "PSA", "WELL", "VICI"],
+    "유틸리티": ["NEE", "DUK", "SO", "D", "AEP", "SRE", "EXC", "XEL", "WEC", "ED"],
+
+    # ── 크립토·스팩 ──
+    "크립토·블록체인": ["COIN", "MSTR", "MARA", "RIOT", "CLSK", "HUT", "BITF", "SI"],
+
+    # ── ETF ──
+    "레버리지 ETF": ["TQQQ", "SOXL", "NVDL", "CONL", "SQQQ", "FNGU", "SPXL", "TSLL", "LABU", "UPRO",
+                     "MSTX", "MSTU", "SOXS", "TECL", "WEBL", "DPST", "FAS", "FAZ", "TNA", "TZA"],
+    "인덱스·배당 ETF": ["SPY", "QQQ", "IWM", "DIA", "VOO", "IVV", "GLD", "SLV", "SCHD", "JEPI", "JEPQ",
+                       "VTI", "ARKK", "ARKW", "XBI", "SMH", "SOXX", "KWEB", "EEM", "VWO"],
+    "섹터 ETF": ["XLK", "XLV", "XLF", "XLY", "XLP", "XLC", "XLI", "XLE", "XLB", "XLRE", "XLU"],
 }
 
-# === 섹터 정보 (한글명 + 대표 ETF + 아이콘) ===
+# 섹터 카테고리 (대분류 → 세분화 섹터 그룹핑)
+SECTOR_CATEGORIES = {
+    "🖥️ 기술": ["반도체", "소프트웨어", "클라우드·인터넷", "사이버보안", "AI·로보틱스"],
+    "📡 커뮤니케이션": ["소셜·미디어", "통신"],
+    "🏥 헬스케어": ["제약", "바이오텍", "의료기기"],
+    "🏦 금융": ["대형 은행", "핀테크·결제", "자산운용·보험"],
+    "🛒 소비": ["전기차·자율주행", "유통·이커머스", "외식·레저", "명품·의류"],
+    "🏭 산업·에너지": ["방위·항공", "산업재", "에너지", "소재·화학"],
+    "🏠 부동산·유틸": ["리츠·부동산", "유틸리티"],
+    "₿ 크립토": ["크립토·블록체인"],
+    "📦 ETF": ["레버리지 ETF", "인덱스·배당 ETF", "섹터 ETF"],
+}
+
+# 세분화 섹터별 정보 (아이콘 + 대표 ETF)
 SECTOR_INFO = {
-    "Technology":             {"kr": "🖥️ 기술",       "etf": "XLK"},
-    "Healthcare":             {"kr": "🏥 헬스케어",    "etf": "XLV"},
-    "Financial Services":     {"kr": "🏦 금융",       "etf": "XLF"},
-    "Consumer Cyclical":      {"kr": "🛒 경기소비재",  "etf": "XLY"},
-    "Consumer Defensive":     {"kr": "🛡️ 필수소비재", "etf": "XLP"},
-    "Communication Services": {"kr": "📡 커뮤니케이션", "etf": "XLC"},
-    "Industrials":            {"kr": "🏭 산업재",      "etf": "XLI"},
-    "Energy":                 {"kr": "⛽ 에너지",      "etf": "XLE"},
-    "Materials":              {"kr": "🧱 소재",        "etf": "XLB"},
-    "Real Estate":            {"kr": "🏠 부동산",      "etf": "XLRE"},
-    "Utilities":              {"kr": "💡 유틸리티",    "etf": "XLU"},
-    "ETF":                    {"kr": "📦 ETF",         "etf": "SPY"},
-    "기타":                   {"kr": "🔷 기타",        "etf": None},
+    "반도체":       {"icon": "🔬", "etf": "SOXX", "parent": "기술"},
+    "소프트웨어":    {"icon": "💻", "etf": "IGV",  "parent": "기술"},
+    "클라우드·인터넷": {"icon": "☁️", "etf": "SKYY", "parent": "기술"},
+    "사이버보안":    {"icon": "🛡️", "etf": "CIBR", "parent": "기술"},
+    "AI·로보틱스":   {"icon": "🤖", "etf": "BOTZ", "parent": "기술"},
+
+    "소셜·미디어":  {"icon": "📱", "etf": "XLC",  "parent": "커뮤니케이션"},
+    "통신":         {"icon": "📞", "etf": "VOX",  "parent": "커뮤니케이션"},
+
+    "제약":         {"icon": "💊", "etf": "XLV",  "parent": "헬스케어"},
+    "바이오텍":     {"icon": "🧬", "etf": "XBI",  "parent": "헬스케어"},
+    "의료기기":     {"icon": "🩺", "etf": "IHI",  "parent": "헬스케어"},
+
+    "대형 은행":    {"icon": "🏛️", "etf": "XLF",  "parent": "금융"},
+    "핀테크·결제":  {"icon": "💳", "etf": "IPAY", "parent": "금융"},
+    "자산운용·보험": {"icon": "📊", "etf": "KIE",  "parent": "금융"},
+
+    "전기차·자율주행": {"icon": "🚗", "etf": "DRIV", "parent": "소비"},
+    "유통·이커머스":  {"icon": "🛍️", "etf": "XRT",  "parent": "소비"},
+    "외식·레저":     {"icon": "🍔", "etf": "PEJ",  "parent": "소비"},
+    "명품·의류":     {"icon": "👔", "etf": "XLY",  "parent": "소비"},
+
+    "방위·항공":     {"icon": "✈️", "etf": "ITA",  "parent": "산업·에너지"},
+    "산업재":        {"icon": "🏗️", "etf": "XLI",  "parent": "산업·에너지"},
+    "에너지":        {"icon": "⛽", "etf": "XLE",  "parent": "산업·에너지"},
+    "소재·화학":     {"icon": "🧱", "etf": "XLB",  "parent": "산업·에너지"},
+
+    "리츠·부동산":   {"icon": "🏠", "etf": "XLRE", "parent": "부동산·유틸"},
+    "유틸리티":      {"icon": "💡", "etf": "XLU",  "parent": "부동산·유틸"},
+
+    "크립토·블록체인": {"icon": "₿", "etf": "BITO", "parent": "크립토"},
+
+    "레버리지 ETF":  {"icon": "🚀", "etf": "TQQQ", "parent": "ETF"},
+    "인덱스·배당 ETF": {"icon": "📈", "etf": "SPY",  "parent": "ETF"},
+    "섹터 ETF":      {"icon": "🗂️", "etf": "XLK",  "parent": "ETF"},
 }
+
+# candidate_tickers: 모든 세분화 섹터의 종목 합집합 (중복 제거)
+_all_tickers = []
+for _tickers in SECTOR_TICKERS.values():
+    _all_tickers.extend(_tickers)
+# 각 섹터의 대표 ETF도 추가
+for _sinfo in SECTOR_INFO.values():
+    if _sinfo.get("etf"):
+        _all_tickers.append(_sinfo["etf"])
+candidate_tickers = list(dict.fromkeys(_all_tickers))
+
+# ETF로 분류할 티커 목록
+known_etfs = set()
+for _etf_sector in ["레버리지 ETF", "인덱스·배당 ETF", "섹터 ETF"]:
+    known_etfs.update(SECTOR_TICKERS.get(_etf_sector, []))
+# SECTOR_INFO의 대표 ETF 중 개별 종목이 아닌 것들
+for _sinfo in SECTOR_INFO.values():
+    if _sinfo.get("etf"):
+        known_etfs.add(_sinfo["etf"])
+
+# 종목 → 세분화 섹터 매핑 (역 매핑)
+TICKER_TO_SECTOR = {}
+for _sector_name, _tickers in SECTOR_TICKERS.items():
+    for _t in _tickers:
+        if _t not in TICKER_TO_SECTOR:
+            TICKER_TO_SECTOR[_t] = _sector_name
+
+
+# ═══════════════════════════════════════════════════════════════
+# === 데이터 로딩 (candidate_tickers만 — SEC 전체 로딩 제거) ===
+# ═══════════════════════════════════════════════════════════════
 
 @st.cache_data(ttl=30)
 def load_all_data():
+    """candidate_tickers 목록만 Yahoo Finance 배치 API로 로딩 (~300개, 빠름)"""
     raw_quotes = []
     all_symbols = list(candidate_tickers)
-    try:
-        sec_resp = requests.get('https://www.sec.gov/files/company_tickers.json', headers={'User-Agent': 'AbomiApp admin@abomi.com'}, timeout=4)
-        if sec_resp.status_code == 200:
-            sec_data = sec_resp.json()
-            sec_tickers = [v['ticker'].replace('.', '-') for v in sec_data.values()]
-            all_symbols.extend(sec_tickers)
-    except Exception:
-        pass
-    all_symbols = list(dict.fromkeys(all_symbols))
+
     try:
         session = requests.Session()
         session.headers.update({'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'})
@@ -323,6 +420,7 @@ def load_all_data():
                 raw_quotes.extend(res)
     except Exception:
         raw_quotes = []
+
     parsed = []
     for q in raw_quotes:
         sym = q.get('symbol')
@@ -333,12 +431,16 @@ def load_all_data():
             continue
         chg = round(q.get('regularMarketChangePercent', 0) or 0.0, 2)
         q_type = q.get('quoteType', '')
+
+        # 세분화 섹터 결정
         if q_type == 'ETF' or sym in known_etfs:
-            sector = 'ETF'
+            sector = TICKER_TO_SECTOR.get(sym, 'ETF')
+            # ETF 섹터가 아닌 경우 일반 ETF 카테고리에 넣기
+            if sector not in SECTOR_TICKERS:
+                sector = '인덱스·배당 ETF'
         else:
-            sector = q.get('sector', SECTOR_MAP.get(sym, '기타'))
-            if not sector:
-                sector = '기타'
+            sector = TICKER_TO_SECTOR.get(sym, '기타')
+
         vol = q.get('regularMarketVolume', 0) or 0
         raw_cap = q.get('marketCap') or q.get('netAssets') or 100_000_000
         cap_b = round(raw_cap / 1_000_000_000, 2)
@@ -352,6 +454,7 @@ def load_all_data():
             '현재가($)': cp, '등락률(%)': chg, '거래량': vol, '시가총액(B$)': cap_b,
             'PER': pe, 'PBR': pbr, '배당수익률(%)': div_yield,
         })
+
     df_data = pd.DataFrame(parsed)
     if not df_data.empty:
         df_data = df_data.drop_duplicates(subset=['Ticker']).sort_values(by='거래량', ascending=False).reset_index(drop=True)
@@ -423,15 +526,13 @@ with main_col:
         if "selected_sector" not in st.session_state:
             st.session_state["selected_sector"] = "전체"
 
-        # === 섹터 개요 카드 (항상 표시) ===
+        # === 섹터 리스트 (카테고리별 그룹 패널 — 2열 배치) ===
         # 섹터별 종목 수 + ETF 등락률 계산
         sector_stats = {}
         for sec_name, sec_info in SECTOR_INFO.items():
-            sec_df = df[df["섹터"] == sec_name] if sec_name != "전체" else df
+            sec_df = df[df["섹터"] == sec_name] if not df.empty else pd.DataFrame()
             count = len(sec_df)
-            if count == 0 and sec_name not in ["ETF", "기타"]:
-                continue
-            etf_ticker = sec_info["etf"]
+            etf_ticker = sec_info.get("etf")
             etf_chg = 0.0
             etf_price = 0.0
             if etf_ticker and not df.empty:
@@ -439,32 +540,60 @@ with main_col:
                 if not etf_row.empty:
                     etf_chg = float(etf_row.iloc[0]["등락률(%)"])
                     etf_price = float(etf_row.iloc[0]["현재가($)"])
-            sector_stats[sec_name] = {"count": count, "chg": etf_chg, "price": etf_price, "etf": etf_ticker, "kr": sec_info["kr"]}
+            sector_stats[sec_name] = {"count": count, "chg": etf_chg, "price": etf_price, "etf": etf_ticker, "icon": sec_info["icon"]}
 
-        # 섹터 카드 그리드 (2행 × 6열)
-        visible_sectors = [s for s in sector_stats if sector_stats[s]["count"] > 0]
-        row_size = 6
-        for row_start in range(0, len(visible_sectors), row_size):
-            row_sectors = visible_sectors[row_start:row_start + row_size]
-            cols = st.columns(len(row_sectors))
-            for i, sec_name in enumerate(row_sectors):
-                s = sector_stats[sec_name]
-                chg_class = "chg-up" if s["chg"] > 0 else ("chg-down" if s["chg"] < 0 else "chg-flat")
-                chg_sign = "+" if s["chg"] > 0 else ""
-                etf_label = s["etf"] if s["etf"] else "-"
-                with cols[i]:
-                    if st.button(f"{s['kr']}\n{etf_label} {chg_sign}{s['chg']:.2f}%\n{s['count']}개", key=f"sec_{sec_name}", use_container_width=True):
-                        st.session_state["selected_sector"] = sec_name
-                        st.rerun()
+        current_sector = st.session_state["selected_sector"]
+
+        # 카테고리 목록을 2열로 배분
+        cat_items = list(SECTOR_CATEGORIES.items())
+        list_col1, list_col2 = st.columns(2)
+
+        for idx, (cat_name, cat_sectors) in enumerate(cat_items):
+            visible = [s for s in cat_sectors if s in sector_stats]
+            if not visible:
+                continue
+
+            # 짝수 인덱스 → 좌측, 홀수 → 우측
+            target_col = list_col1 if idx % 2 == 0 else list_col2
+
+            with target_col:
+                # HTML 리스트 그룹 생성
+                rows_html = ""
+                for sec_name in visible:
+                    s = sector_stats[sec_name]
+                    chg_class = "chg-up" if s["chg"] > 0 else ("chg-down" if s["chg"] < 0 else "chg-flat")
+                    chg_sign = "+" if s["chg"] > 0 else ""
+                    etf_label = s["etf"] if s["etf"] else "-"
+                    count_label = f'{s["count"]}' if s["count"] > 0 else "-"
+                    active_cls = " active" if current_sector == sec_name else ""
+                    rows_html += f'''<div class="sector-list-row{active_cls}">
+                        <span class="sl-icon">{s["icon"]}</span>
+                        <span class="sl-name">{sec_name}</span>
+                        <span class="sl-etf">{etf_label}</span>
+                        <span class="sl-chg {chg_class}">{chg_sign}{s["chg"]:.2f}%</span>
+                        <span class="sl-count">{count_label}</span>
+                    </div>'''
+
+                st.markdown(f'''<div class="sector-list-group">
+                    <div class="sector-list-header">{cat_name}</div>
+                    {rows_html}
+                </div>''', unsafe_allow_html=True)
+
+                # st.button으로 클릭 핸들링 (HTML은 클릭 이벤트가 안 되므로)
+                btn_cols = st.columns(min(len(visible), 5))
+                for bi, sec_name in enumerate(visible):
+                    with btn_cols[bi % len(btn_cols)]:
+                        if st.button(sec_name, key=f"sec_{sec_name}", use_container_width=True,
+                                     type="primary" if current_sector == sec_name else "secondary"):
+                            st.session_state["selected_sector"] = sec_name
+                            st.rerun()
 
         # --- 전체 보기 버튼 ---
         bc1, bc2, bc3 = st.columns([2, 1, 2])
         with bc2:
-            if st.button("🔄 전체 보기" if st.session_state["selected_sector"] != "전체" else "✅ 전체 보기 중", use_container_width=True, disabled=(st.session_state["selected_sector"] == "전체")):
+            if st.button("🔄 전체 보기" if current_sector != "전체" else "✅ 전체 보기 중", use_container_width=True, disabled=(current_sector == "전체")):
                 st.session_state["selected_sector"] = "전체"
                 st.rerun()
-
-        current_sector = st.session_state["selected_sector"]
 
         # === 선택된 섹터 ETF 정보 바 ===
         if current_sector != "전체" and current_sector in SECTOR_INFO:
@@ -477,13 +606,14 @@ with main_col:
                     ec = float(etf_match.iloc[0]["등락률(%)"])
                     chg_cls = "chg-up" if ec > 0 else ("chg-down" if ec < 0 else "chg-flat")
                     chg_s = "+" if ec > 0 else ""
-                    sec_count = len(df[df["섹터"] == current_sector])
-                    avg_chg = df[df["섹터"] == current_sector]["등락률(%)"].mean()
+                    sec_df_for_bar = df[df["섹터"] == current_sector]
+                    sec_count = len(sec_df_for_bar)
+                    avg_chg = sec_df_for_bar["등락률(%)"].mean() if sec_count > 0 else 0.0
                     avg_cls = "chg-up" if avg_chg > 0 else ("chg-down" if avg_chg < 0 else "chg-flat")
                     avg_s = "+" if avg_chg > 0 else ""
                     st.markdown(f"""
                     <div class="sector-etf-bar">
-                        <span class="etf-name">{sinfo['kr']}</span>
+                        <span class="etf-name">{sinfo['icon']} {current_sector}</span>
                         <span class="etf-detail">대표 ETF: <b>{etf_t}</b> ${ep:.2f} <span class="{chg_cls}">({chg_s}{ec:.2f}%)</span></span>
                         <span class="etf-detail">{sec_count}개 종목 · 평균 <span class="{avg_cls}">{avg_s}{avg_chg:.2f}%</span></span>
                     </div>
@@ -556,7 +686,9 @@ with main_col:
             filtered_df = filtered_df.sort_values(by="종목명", ascending=True)
 
         # --- 결과 카운트 ---
-        sector_label = SECTOR_INFO.get(current_sector, {}).get("kr", "전체") if current_sector != "전체" else "전체"
+        sector_label = current_sector if current_sector != "전체" else "전체"
+        if current_sector != "전체" and current_sector in SECTOR_INFO:
+            sector_label = f"{SECTOR_INFO[current_sector]['icon']} {current_sector}"
         if len(filtered_df) < len(sector_df):
             st.caption(f"{sector_label} · 필터 적용 **{len(filtered_df):,}**개")
         else:
@@ -778,7 +910,7 @@ with main_col:
             with tc1:
                 selected_sectors = st.multiselect("섹터 필터", options=list(df_tree_raw["섹터"].unique()), default=[])
             with tc2:
-                top_n = st.slider("상위 종목 수", 50, len(df_tree_raw), 300, step=50)
+                top_n = st.slider("상위 종목 수", 50, min(len(df_tree_raw), 500), min(len(df_tree_raw), 300), step=50)
             df_ft = df_tree_raw.copy()
             if selected_sectors: df_ft = df_ft[df_ft["섹터"].isin(selected_sectors)]
             df_ft = df_ft.head(top_n)
